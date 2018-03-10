@@ -17,7 +17,7 @@ THETA_EPS = .15
 STOP_TIME = 3
 
 # minimum distance from a stop sign to obey it
-STOP_MIN_DIST = 90
+STOP_MIN_DIST = 15  # cm
 
 # time taken to cross an intersection
 CROSSING_TIME = 3
@@ -64,10 +64,14 @@ class Supervisor:
         self.laser_inc = 0
         self.prev_mode = self.mode
         # rospy.Subscriber('/scan', LaserScan, self.scan_callback)
+
+        # stop signs
+        self.signs_detected = 0
+        self.sign_locations = []
         
         # Set up subscribers
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
-       
+        rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/explore_info', ExploreInfo, self.explore_callback)
         rospy.Subscriber('/rescue_info', RescueInfo, self.rescue_callback)
         rospy.Subscriber('/rescue_on', String, self.rescue_on_callback)
@@ -79,7 +83,19 @@ class Supervisor:
 
         # TF listener
         self.tf_listener = tf.TransformListener()
+        self.tf_broadcast = tf.TransformBroadcaster()
 
+    def animal_detected_callback(self, msg):
+        dist = msg.distance
+        conf = msg.confidence
+        theta = (msg.thetaleft + msg.thetaright) / 2
+        theta = theta % 360
+        
+    def detection_in_world(self, rho, theta):
+        x_world = rho*np.cos(theta + self.theta) + self.x
+        y_world = rho*np.sin(theta + self.theta) + self.y
+        return x_world, y_world
+        
     def explore_callback(self):
         a = None
 
@@ -88,6 +104,7 @@ class Supervisor:
 
     def rescue_on_callback(self):
         a = None
+        
     def scan_callback(self, msg):
         self.laser_ranges = msg.ranges
         self.laser_inc = msg.angle_increment
@@ -111,17 +128,26 @@ class Supervisor:
         rospy.loginfo("Commanded Pose: x=%f.2, y=%f.2, th=%f.2"
                       % (x_g, y_g,  math.degrees(theta_g)))
 
+    def matches_detection(self, loc_list, location):
+        pass
+
     def stop_sign_detected_callback(self, msg):
         """ callback for when the detector has found a stop sign. Note that
         a distance of 0 can mean that the lidar did not pickup the stop sign at all
         so you shouldn't necessarily stop then """
+        dist = msg.distance
+        conf = msg.confidence
+        theta = (msg.thetaleft + msg.thetaright) / 2
+        theta = theta % 360
+        pose_world = self.detection_in_world(dist, theta)
+        self.matches_detection(self.sign_locations, pose_world)
 
         ### YOUR CODE HERE ###
         obj_class = msg.name
         conf = msg.confidence
         dist = msg.distance
         # print(dist, conf)
-        if obj_class == "stop_sign" and dist > STOP_MIN_DIST \
+        if obj_class == "stop_sign" and dist < STOP_MIN_DIST and dist > 1 \
            and conf > 0.1 \
            and not self.mode == Mode.CROSS \
            and not self.mode == Mode.STOP:
