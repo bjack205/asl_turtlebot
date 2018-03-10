@@ -1,0 +1,5 @@
+<launch>
+  <node name="teleop" pkg="asl_turtlebot" type="keyboard_teleop.py" >
+    <remap from="/cmd_vel" to="/telep_vel" />        
+  </node>
+</launch>
