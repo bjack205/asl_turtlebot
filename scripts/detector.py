@@ -1,12 +1,11 @@
 #!/usr/bin/env python
-
 import rospy
 import os
 # watch out on the order for the next two imports lol
 from tf import TransformListener
 import tensorflow as tf
 import numpy as np
-from sensor_msgs.msg import CompressedImage, Image, CameraInfo, LaserScan
+from sensor_msgs.msg import Image, CameraInfo, LaserScan, CompressedImage
 from asl_turtlebot.msg import DetectedObject
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
@@ -143,15 +142,15 @@ class Detector:
 
         ### YOUR CODE HERE ###
 
-        x = 1 # CHANGE ME
-        y = 0 # CHANGE ME
-        z = 0 # CHANGE ME
+        x = (u-self.cx)/float(self.fx) # CHANGE ME
+        y = (u-self.cy)/float(self.fy) # CHANGE ME
+        z = 1 # CHANGE ME
 
         ### END OF YOUR CODE ###
 
         return (x,y,z)
 
-    def estimate_distance(self, thetaleft, thetaright, ranges):
+    def estimate_distance(self, thetaleft, thetaright, ranges, box_height):
         """ estimates the distance of an object in between two angles
         using lidar measurements """
 
@@ -171,6 +170,8 @@ class Detector:
         if num_m>0:
             dist /= num_m
 
+        dist = box_height
+        
         return dist
 
     def camera_callback(self, msg):
@@ -232,7 +233,7 @@ class Detector:
                     thetaright += 2.*math.pi
 
                 # estimate the corresponding distance using the lidar
-                dist = self.estimate_distance(thetaleft,thetaright,img_laser_ranges)
+                dist = self.estimate_distance(thetaleft,thetaright,img_laser_ranges, ymax-ymin)
 
                 if not self.object_publishers.has_key(cl):
                     self.object_publishers[cl] = rospy.Publisher('/detector/'+self.object_labels[cl],
@@ -261,10 +262,10 @@ class Detector:
 
         ### YOUR CODE HERE ###
 
-        self.cx = 0 # CHANGE ME
-        self.cy = 0 # CHANGE ME
-        self.fx = 1 # CHANGE ME
-        self.fy = 1 # CHANGE ME
+        self.cx = msg.K[2] # CHANGE ME
+        self.cy = msg.K[5] # CHANGE ME
+        self.fx = msg.K[0] # CHANGE ME
+        self.fy = msg.K[4] # CHANGE ME
 
         ### END OF YOUR CODE ###
 
