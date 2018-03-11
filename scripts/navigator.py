@@ -164,16 +164,23 @@ class Navigator:
         if len(self.current_plan)==0 or not(self.close_to_start_location()) or self.occupancy_updated:
 
             # use A* to compute new plan
+            
             state_min = self.snap_to_grid((-self.plan_horizon, -self.plan_horizon))
             state_max = self.snap_to_grid((self.plan_horizon, self.plan_horizon))
             x_init = self.snap_to_grid((self.x, self.y))
             x_goal = self.snap_to_grid((self.x_g, self.y_g))
+            Atime_start = rospy.get_rostime()
             problem = AStar(state_min,state_max,x_init,x_goal,self.occupancy,self.plan_resolution)
 
             rospy.loginfo("Navigator: Computing navigation plan")
             if problem.solve():
+                # time
+                Atime_end = rospy.get_rostime()
+                rospy.loginfo("A time: %f", (Atime_end - Atime_start).to_sec())
+                
                 if len(problem.path) > 3:
                     # cubic spline interpolation requires 4 points
+                    splinetime_start = rospy.get_rostime()
                     self.current_plan = problem.path
                     self.current_plan_start_time = rospy.get_rostime()
                     self.current_plan_start_loc = [self.x, self.y]
@@ -205,6 +212,9 @@ class Navigator:
                     self.path_x_spline = scipy.interpolate.splrep(path_t, path_x, k=3, s=SMOOTH)
                     self.path_y_spline = scipy.interpolate.splrep(path_t, path_y, k=3, s=SMOOTH)
                     self.path_tf = path_t[-1]
+                    
+                    splinetime_end = rospy.get_rostime()
+                    rospy.loginfo("cubic time: %f", (splinetime_end - splinetime_start).to_sec())
 
                     # to inspect the interpolation and smoothing
                     # t_test = np.linspace(path_t[0],path_t[-1],1000)
@@ -213,6 +223,7 @@ class Navigator:
                     # plt.plot(path_t,path_y,'bo')
                     # plt.plot(t_test,scipy.interpolate.splev(t_test,self.path_y_spline,der=0))
                     # plt.show()
+                    #
                 else:
                     rospy.logwarn("Navigator: Path too short, not updating")
             else:

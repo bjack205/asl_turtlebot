@@ -1,6 +1,6 @@
 <launch>
 
-  <node pkg="gmapping" type="slam_gmapping" name="turtlebot3_slam_gmapping" output="log">
+  <node pkg="gmapping" type="slam_gmapping" name="turtlebot3_slam_gmapping" >
     <param name="base_frame" value="base_footprint"/>
     <param name="odom_frame" value="odom"/>
     <param name="map_update_interval" value="1.0"/>
@@ -36,6 +36,6 @@
 
   <node pkg="asl_turtlebot" type="supervisor.py" name="turtlebot_supervisor" output="screen"/>
   <node pkg="asl_turtlebot" type="pose_controller.py" name="turtlebot_pose_controller" />
-  <node pkg="asl_turtlebot" type="navigator.py" name="turtlebot_navigator" />
+  <node pkg="asl_turtlebot" type="navigator.py" name="turtlebot_navigator" output="screen"/>
   <!--<node pkg="asl_turtlebot" type="detector.py" name="turtlebot_detector" />-->
 </launch>
