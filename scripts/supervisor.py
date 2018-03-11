@@ -4,7 +4,7 @@ import rospy
 from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float32MultiArray, String
 
-from geometry_msgs.msg import Twist, PoseArray, Pose2D
+from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from asl_turtlebot.msg import DetectedObject, Task, RescueInfo, ExploreInfo
 import tf
 import math
@@ -47,6 +47,9 @@ class Mode(Enum):
     STOP = 7
     CROSS = 8
     MANUAL = 9
+    # SIM
+    IDLE = 10
+    NAV = 11
 
 class Supervisor:
     """ the state machine of the turtlebot """
@@ -65,7 +68,9 @@ class Supervisor:
         self.theta_g = 0
 
         # current mode
-        self.mode = Mode.EXPLORE
+        #self.mode = Mode.EXPLORE
+        # for simulator
+        self.mode = Mode.IDLE
         self.last_mode_printed = None
 
         # mission stuff
@@ -97,11 +102,19 @@ class Supervisor:
         rospy.Subscriber('/explore_info', ExploreInfo, self.explore_callback)
         rospy.Subscriber('/rescue_info', RescueInfo, self.rescue_callback)
         rospy.Subscriber('/rescue_on', String, self.rescue_on_callback)
+        
+
+        # For Simulation
+        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
 
         # Set up publishers
         self.task_pub = rospy.Publisher('/task', Task, queue_size=10)
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
         self.rescue_pub = rospy.Publisher('/ready_to_rescue', String, queue_size=10)
+        
+        # For Simulation
+        self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
+        self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
         # TF listener
         self.tf_listener = tf.TransformListener()
@@ -340,6 +353,17 @@ class Supervisor:
             # not doing anything
             rospy.loginfo("Task Complete!!!")
             pass
+            
+        # sim modes  
+        elif self.mode == Mode.IDLE:
+            # send zero velocity
+            self.stay_idle()
+            
+        elif self.mode == Mode.NAV:
+            if self.close_to(self.x_g,self.y_g,self.theta_g):
+                self.mode = Mode.IDLE
+            else:
+                self.nav_to_pose()
 
         elif self.mode == Mode.EXPLORE:
             # moving towards a desired pose
