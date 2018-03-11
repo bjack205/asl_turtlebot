@@ -48,6 +48,9 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(
  FILES
  DetectedObject.msg
+ Task.msg
+ ExploreInfo.msg
+ RescueInfo.msg
 )
 
 ## Generate services in the 'srv' folder
