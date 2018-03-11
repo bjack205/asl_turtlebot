@@ -101,7 +101,7 @@ class Supervisor:
         # Set up publishers
         self.task_pub = rospy.Publisher('/task', Task, queue_size=10)
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
-        self.rescue_pub = rospy.Publisher('/read_to_rescue', String, queue_size=10)
+        self.rescue_pub = rospy.Publisher('/ready_to_rescue', String, queue_size=10)
 
         # TF listener
         self.tf_listener = tf.TransformListener()
@@ -157,13 +157,13 @@ class Supervisor:
     def detection_in_world(self, rho, theta):
         x_robot = rho*np.cos(theta)
         y_robot = rho*np.sin(theta)
-        '''
+        
         self.tf_broadcast.sendTransform((x_robot/100., y_robot/100., 0),
                                         tf.transformations.quaternion_from_euler(0, 0, 0),
                                         rospy.Time.now(),
                                         "stop_sign",
                                         "/base_footprint")
-        '''
+        
         x_world = x_robot*np.cos(self.theta) - y_robot*np.sin(self.theta) + self.x
         y_world = y_robot*np.cos(self.theta) + x_robot*np.sin(self.theta) + self.y
         theta_world = self.theta  # Estimate orientation of object as that of the robot
@@ -180,7 +180,7 @@ class Supervisor:
         
         # Estimate position in world
         pose_world = self.detection_in_world(dist, theta)
-        self.print_pose()
+        # self.print_pose()
         # print(pose_world)
         
         # Match with previous detections
@@ -241,8 +241,8 @@ class Supervisor:
         self.theta_g = euler[2]
 
         self.mode = Mode.NAV
-
-    def stop_sign_detected_callback(self, msg):
+    
+    def stop_sign_detected_callback_theirs(self, msg):
         """ callback for when the detector has found a stop sign. Note that
         a distance of 0 can mean that the lidar did not pickup the stop sign at all """
 
@@ -252,6 +252,7 @@ class Supervisor:
         # if close enough and in nav mode, stop
         if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV:
             self.init_stop_sign()
+        
 
     def go_to_pose(self):
         """ sends the current desired pose to the pose controller """
@@ -327,21 +328,12 @@ class Supervisor:
         self.publish_detections()
         # self.print_pose()
         # self.print_goal()
-        """
-        try:
-            (translation,rotation) = self.trans_listener.lookupTransform('/map', '/base_footprint', rospy.Time(0))
-            self.x = translation[0]
-            self.y = translation[1]
-            euler = tf.transformations.euler_from_quaternion(rotation)
-            self.theta = euler[2]
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-            pass
 
         # logs the current mode
         if not(self.last_mode_printed == self.mode):
             rospy.loginfo("Current Mode: %s", self.mode)
             self.last_mode_printed = self.mode
-        """
+        
         
         # checks wich mode it is in and acts accordingly
         if self.mode == Mode.TASK_COMPLETE:
