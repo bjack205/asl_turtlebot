@@ -176,7 +176,7 @@ class Navigator:
             if problem.solve():
                 # time
                 Atime_end = rospy.get_rostime()
-                rospy.loginfo("A time: %f", (Atime_end - Atime_start).to_sec())
+
                 
                 if len(problem.path) > 3:
                     # cubic spline interpolation requires 4 points
@@ -234,6 +234,7 @@ class Navigator:
         if len(self.current_plan) > 3:
 
             # if currently not moving, first line up with the plan
+            """
             if self.V_prev == 0:
                 theta_init = np.arctan2(self.current_plan[1][1]-self.current_plan[0][1],self.current_plan[1][0]-self.current_plan[0][0])
                 theta_err = theta_init-self.theta
@@ -243,6 +244,7 @@ class Navigator:
                     cmd_msg.angular.z = THETA_START_P * theta_err
                     self.nav_vel_pub.publish(cmd_msg)
                     return
+            """
 
             # compute the "current" time along the path execution
             t = (rospy.get_rostime()-self.current_plan_start_time).to_sec()
