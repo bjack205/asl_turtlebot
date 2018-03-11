@@ -143,8 +143,12 @@ class Detector:
         ### YOUR CODE HERE ###
 
         x = (u-self.cx)/float(self.fx) # CHANGE ME
-        y = (u-self.cy)/float(self.fy) # CHANGE ME
+        y = (v-self.cy)/float(self.fy) # CHANGE ME
         z = 1 # CHANGE ME
+        mag = np.linalg.norm(np.array([x, y, z]))
+        x /= mag
+        y /= mag
+        z /= mag
 
         ### END OF YOUR CODE ###
 
@@ -170,7 +174,9 @@ class Detector:
         if num_m>0:
             dist /= num_m
 
-        dist = box_height
+        SLOPE = 1889.0232
+        INTER = 2.8490819
+        dist = SLOPE/box_height + INTER
         
         return dist
 
