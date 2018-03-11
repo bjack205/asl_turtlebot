@@ -8,6 +8,7 @@ from asl_turtlebot.msg import DetectedObject, Task, RescueInfo, ExploreInfo
 import tf
 import math
 from enum import Enum
+import numpy as np
 
 # threshold at which we consider the robot at a location
 POS_EPS = .1
@@ -17,12 +18,21 @@ THETA_EPS = .15
 STOP_TIME = 3
 
 # minimum distance from a stop sign to obey it
-STOP_MIN_DIST = 15  # cm
+STOP_MIN_DIST = 20  # cm
 
 # time taken to cross an intersection
 CROSSING_TIME = 3
 
 ANIMAL_DROPOFF_WAIT = 1
+
+
+def average_angles(ang1, ang2):
+    ang1 += np.pi
+    ang2 += np.pi
+    ang1 %= 2*np.pi
+    ang2 %= 2*np.pi
+    avg = (ang1 + ang2) / 2
+    return (avg - np.pi) % (2*np.pi)
 
 
 # state machine modes, not all implemented
@@ -65,9 +75,15 @@ class Supervisor:
         self.prev_mode = self.mode
         # rospy.Subscriber('/scan', LaserScan, self.scan_callback)
 
+        # detections
+        self.detections = {}  # dictionary of name ("cat", "dog", "stopsign")
+                              # returns a list of current detections
+        
+        
         # stop signs
         self.signs_detected = 0
         self.sign_locations = []
+        self.detection_threshold_dist = 15  # cm
         
         # Set up subscribers
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
@@ -90,12 +106,7 @@ class Supervisor:
         conf = msg.confidence
         theta = (msg.thetaleft + msg.thetaright) / 2
         theta = theta % 360
-        
-    def detection_in_world(self, rho, theta):
-        x_world = rho*np.cos(theta + self.theta) + self.x
-        y_world = rho*np.sin(theta + self.theta) + self.y
-        return x_world, y_world
-        
+
     def explore_callback(self):
         a = None
 
@@ -129,19 +140,75 @@ class Supervisor:
                       % (x_g, y_g,  math.degrees(theta_g)))
 
     def matches_detection(self, loc_list, location):
-        pass
+        distance = np.linalg.norm(np.array(loc_list) - location, axis=-1)
+        min_dist = np.min(distance)
+        if min_dist < self.detection_threshold_dist:
+            min_ind = np.argmin(distance)
+        else:
+            min_ind = -1
+        return min_ind
+
+    def detection_in_world(self, rho, theta):
+        x_robot = rho*np.cos(theta)
+        y_robot = rho*np.sin(theta)
+        '''
+        self.tf_broadcast.sendTransform((x_robot/100., y_robot/100., 0),
+                                        tf.transformations.quaternion_from_euler(0, 0, 0),
+                                        rospy.Time.now(),
+                                        "stop_sign",
+                                        "/base_footprint")
+        '''
+        x_world = x_robot*np.cos(self.theta) - y_robot*np.sin(self.theta) + self.x
+        y_world = y_robot*np.cos(self.theta) + x_robot*np.sin(self.theta) + self.y
+        theta_world = self.theta  # Estimate orientation of object as that of the robot
+        return x_world, y_world, theta_world
+
+    
+    def object_detected(self, msg):
+        # Get info from message
+        name = msg.name
+        dist = msg.distance
+        conf = msg.confidence
+        theta = average_angles(msg.thetaleft, msg.thetaright)
+        # print(np.degrees(msg.thetaleft), np.degrees(msg.thetaright), np.degrees(theta))
+        
+        # Estimate position in world
+        pose_world = self.detection_in_world(dist, theta)
+        self.print_pose()
+        # print(pose_world)
+        
+        # Match with previous detections
+        if name in self.detections:  # check if in dictionary
+            min_ind = self.matches_detection(self.detections[name], pose_world)
+        else:
+            print("Create detections list " + name)
+            self.detections[name] = []  # add to list
+            min_ind = -1
+        if min_ind >= 0:  # detected previously 
+            previous_location = self.detections[name][min_ind]
+            updated_location = [(pose_world[0] + previous_location[0]) / 2.0,
+                                (pose_world[1] + previous_location[1]) / 2.0,
+                                average_angles(pose_world[2], previous_location[2])]
+            self.detections[name][min_ind] = updated_location
+        else:  # add new detection
+            self.detections[name].append(pose_world)
+
+    def publish_detections(self):
+        for name, detections in self.detections.iteritems():
+            for i, detection in enumerate(detections):
+                self.tf_broadcast.sendTransform((detection[0]/100, detection[1]/100, 0),
+                                                tf.transformations.quaternion_from_euler(0, 0, detection[2]),
+                                                rospy.Time.now(),
+                                                name + "_" + str(i),
+                                                "/map")
+        
 
     def stop_sign_detected_callback(self, msg):
         """ callback for when the detector has found a stop sign. Note that
         a distance of 0 can mean that the lidar did not pickup the stop sign at all
         so you shouldn't necessarily stop then """
-        dist = msg.distance
-        conf = msg.confidence
-        theta = (msg.thetaleft + msg.thetaright) / 2
-        theta = theta % 360
-        pose_world = self.detection_in_world(dist, theta)
-        self.matches_detection(self.sign_locations, pose_world)
-
+        self.object_detected(msg)
+        
         ### YOUR CODE HERE ###
         obj_class = msg.name
         conf = msg.confidence
@@ -189,6 +256,7 @@ class Supervisor:
         actions. This function shouldn't return anything """
 
         self.update_pose()
+        self.publish_detections()
         # self.print_pose()
         # self.print_goal()
 
