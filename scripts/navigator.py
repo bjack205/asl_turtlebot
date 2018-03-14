@@ -13,6 +13,9 @@ from astar import AStar
 from grids import StochOccupancyGrid2D
 import scipy.interpolate
 import matplotlib.pyplot as plt
+import warnings
+
+#from smoothing import LineofSight
 
 
 # threshold at which navigator switches
@@ -27,6 +30,9 @@ START_POS_THRESH = .2
 THETA_START_THRESH = 0.09
 # P gain on orientation before start
 THETA_START_P = 1
+
+# threshold to rotate by when stuck
+THETA_ROTATE_THRESH = 0.174
 
 # maximum velocity
 V_MAX = .2
@@ -91,7 +97,7 @@ class Navigator:
         rospy.Subscriber('/map_metadata', MapMetaData, self.map_md_callback)
         rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_nav_callback)
 
-    def cmd_nav_callback(self, data):
+    def cmd_nav_callback(self, data):   
         self.x_g = data.x
         self.y_g = data.y
         self.theta_g = data.theta
@@ -105,6 +111,7 @@ class Navigator:
 
     def map_callback(self,msg):
         self.map_probs = msg.data
+        #print self.map_probs
         if self.map_width>0 and self.map_height>0 and len(self.map_probs)>0:
             self.occupancy = StochOccupancyGrid2D(self.map_resolution,
                                                   self.map_width,
@@ -113,6 +120,7 @@ class Navigator:
                                                   self.map_origin[1],
                                                   8,
                                                   self.map_probs)
+                      
             self.occupancy_updated = True
 
     def close_to_end_location(self):
@@ -176,9 +184,113 @@ class Navigator:
             if problem.solve():
                 # time
                 Atime_end = rospy.get_rostime()
+                
 
+                    
                 
                 if len(problem.path) > 3:
+                    """
+                    # smooth path
+                    checkpoint = problem.path[0]
+                    currentPoint = problem.path[1]
+                    nextPoint = problem.path[2]
+                    smooth_path = list(problem.path)
+                    print (smooth_path)
+                    print checkpoint, nextPoint
+                    ind = 2
+                    while ind < len(problem.path) - 1:
+                        if problem.LineofSight(checkpoint, nextPoint):
+                            temp = currentPoint
+                            currentPoint = nextPoint
+                            nextPoint = problem.path[ind+1]
+                            print temp
+                            smooth_path.remove(temp)
+                            print smooth_path
+                        else:
+                            print smooth_path
+                            checkpoint = currentPoint
+                            currentPoint = nextPoint
+                            nextPoint = problem.path[ind+1]
+                        ind = ind + 1
+                    
+                         
+                    #problem.path = list(smooth_path)
+                                      
+                    """
+                    
+                    # curve
+                    new_path = []
+                    ind = 0
+                    if len(problem.path) > 4:
+                        while ind < len(problem.path)-2:
+                            s1 = np.array(list(problem.path[ind]))
+                            s2 = np.array(list(problem.path[ind+1]))
+                            s3 = np.array(list(problem.path[ind+2]))
+                            #scur = 
+                            
+                            l1 = s2 - s1
+                            l2 = s3 - s2
+                            
+                            if np.dot(l1, l2) == 0:
+                                #curve
+                                
+                                x = [s1[0], s1[0] + l1[0]/4 + l2[0]/4, s1[0] + l1[0]*2/4 + l2[0]*2/4, s1[0] + l1[0]*3/4 + l2[0]*3/4, s3[0]]
+                                y = [s1[1], s1[1] + 0.6*(l1[1]/4 + l2[1]/4), s1[1] + 0.8*(l1[1]*2/4 + l2[1]*2/4), s1[1] + 1.2*(l1[1]*3/4 + l2[1]*3/4), s3[1]]
+                                """
+                                #x = np.linspace(s1[0], s3[0], 10)
+                                #y = np.linspace(s1[1], s3[1], 10)
+                                if x[-1] < x[0]:
+                                    x = x[::-1]
+                                    y = y[::-1]
+                                    tck = scipy.interpolate.splrep(x, y, k=3, s=SMOOTH)
+                                    xcurve = np.linspace(s1[0], s3[0], 4)
+                                    xcurve = xcurve[1:5]
+                                    ycurve = scipy.interpolate.splev(xcurve[::-1], tck, der=0)
+                                    ycurve = ycurve[::-1]         
+                                else:
+                                    tck = scipy.interpolate.splrep(x, y, k=3, s=SMOOTH)
+                                    xcurve = np.linspace(s1[0], s3[0], 4)
+                                    ycurve = scipy.interpolate.splev(xcurve[1:5], tck, der=0)
+                                                      
+                                
+                                #x = np.linspace(0,10,4)
+                                #y = np.sin(x)
+                                
+                                #print x
+                                #print y
+                                
+
+                                new_points = zip(xcurve.tolist(), ycurve.tolist())
+                                """
+                                if x[-1] < x[0]:
+                                    x = x[::-1]
+                                    y = y[::-1]
+                                    z = np.polyfit(x, y, 2)      
+                                else:
+                                    z = np.polyfit(x, y, 2)
+                                   
+                                f = np.poly1d(z)
+                                xcurve = np.linspace(s1[0], s3[0], 4)
+                                xcurve = xcurve[1:5]
+                                ycurve = [f(i) for i in xcurve]
+                                new_points = zip(xcurve, ycurve) 
+                                #print new_points
+                                
+                                new_path.append(problem.path[ind])
+                                new_path.extend(new_points)
+                                new_path.append(problem.path[ind+2])
+                                ind = ind + 2
+                            else:
+                                new_path.extend([problem.path[ind], problem.path[ind+1], problem.path[ind+2]])
+                                ind = ind + 2
+                                
+                        problem.path = new_path
+                    
+                    #print new_path
+                    #print problem.path
+                    
+                    
+                    
                     # cubic spline interpolation requires 4 points
                     splinetime_start = rospy.get_rostime()
                     self.current_plan = problem.path
@@ -209,8 +321,19 @@ class Navigator:
                         path_y.append(self.current_plan[i+1][1])
 
                     # interpolate the path with cubic spline
-                    self.path_x_spline = scipy.interpolate.splrep(path_t, path_x, k=3, s=SMOOTH)
-                    self.path_y_spline = scipy.interpolate.splrep(path_t, path_y, k=3, s=SMOOTH)
+                    #print path_t
+                    #print path_y
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('error')
+                        try:
+                            self.path_x_spline = scipy.interpolate.splrep(path_t, path_x, k=3, s=SMOOTH)
+                            self.path_y_spline = scipy.interpolate.splrep(path_t, path_y, k=3, s=SMOOTH)
+                        except Warning as e:
+                            print('error found:', e)
+                            print('disabling smooting interpolation')
+                            self.path_x_spline = scipy.interpolate.splrep(path_t, path_x, k=3, s=0)
+                            self.path_y_spline = scipy.interpolate.splrep(path_t, path_y, k=3, s=0)                            
+
                     self.path_tf = path_t[-1]
                     
                     splinetime_end = rospy.get_rostime()
@@ -228,14 +351,20 @@ class Navigator:
                     rospy.logwarn("Navigator: Path too short, not updating")
             else:
                 rospy.logwarn("Navigator: Could not find path")
+                # rotate around in place
+                cmd_msg = Twist()
+                cmd_msg.linear.x = 0
+                cmd_msg.angular.z = self.theta + THETA_ROTATE_THRESH
+                self.nav_vel_pub.publish(cmd_msg)
                 self.current_plan = []
 
         # if we have a path, execute it (we need at least 3 points for this controller)
         if len(self.current_plan) > 3:
 
             # if currently not moving, first line up with the plan
-            """
+            
             if self.V_prev == 0:
+                print ("aligninng heading")
                 theta_init = np.arctan2(self.current_plan[1][1]-self.current_plan[0][1],self.current_plan[1][0]-self.current_plan[0][0])
                 theta_err = theta_init-self.theta
                 if abs(theta_err)>THETA_START_THRESH:
@@ -244,7 +373,7 @@ class Navigator:
                     cmd_msg.angular.z = THETA_START_P * theta_err
                     self.nav_vel_pub.publish(cmd_msg)
                     return
-            """
+            
 
             # compute the "current" time along the path execution
             t = (rospy.get_rostime()-self.current_plan_start_time).to_sec()

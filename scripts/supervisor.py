@@ -5,11 +5,12 @@ from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float32MultiArray, String
 
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
-from asl_turtlebot.msg import DetectedObject, Task, RescueInfo, ExploreInfo
+from asl_turtlebot.msg import DetectedObject
 import tf
 import math
 from enum import Enum
 import numpy as np
+import time
 
 # threshold at which we consider the robot at a location
 POS_EPS = .1
@@ -22,7 +23,7 @@ STOP_TIME = 3
 STOP_MIN_DIST = 20  # cm
 
 # time taken to cross an intersection
-CROSSING_TIME = 3
+CROSSING_TIME = 10
 
 ANIMAL_DROPOFF_WAIT = 1
 
@@ -76,21 +77,27 @@ class Supervisor:
         # current mode
         #self.mode = Mode.EXPLORE
         # for simulator
-        self.mode = Mode.IDLE
+        self.mode = Mode.EXPLORE
         self.last_mode_printed = None
 
-        # mission stuff
-        self.station_location = (0, 0)
-        self.cur_goal = (0, 0)
-        self.all_animals_done = False
+        # mission stuff (0.851, 0.308, 3.133), (0.318, 1.483, 1.681), (1.150, 2.791, -0.001), 
+        self.station_location = (3.372, 1.698, -1.538)
+        self.explore_location = [(3.373, 1.508, -1.619), (3.414, 2.645, -1.585), (3.380, 1.013, -1.536), (2.328, 0.288, -3.093)]
+        self.explore_index = 0
+        self.animal_location = [(2.346, 1.519, 1.517), (2.454, 2.747, 3.119), (3.371, 2.731, -0.001), (3.372, 1.698, -1.538)]
+        self.animal_index = 0
+
         self.rescuers_on = False
         self.is_crossing = False  # Flag if it passing a stop sign
+
+        # self.done_crossing = True
+        # self.cross_time = 0
 
         # new vars
         self.timer = rospy.Time()
         self.laser_ranges = 0
         self.laser_inc = 0
-        self.prev_mode = self.mode
+        self.next_mode = self.mode
         # rospy.Subscriber('/scan', LaserScan, self.scan_callback)
 
         # detections
@@ -108,34 +115,18 @@ class Supervisor:
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/detector/dog', DetectedObject, self.animal_detected_callback)
-        rospy.Subscriber('/explore_info', ExploreInfo, self.explore_callback)
-        rospy.Subscriber('/rescue_info', RescueInfo, self.rescue_callback)
         rospy.Subscriber('/rescue_on', String, self.rescue_on_callback)
         
         # For Simulation
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
-
-        # Set up publishers
-        self.task_pub = rospy.Publisher('/task', Task, queue_size=10)
-        self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
-        self.rescue_pub = rospy.Publisher('/ready_to_rescue', String, queue_size=10)
         
         # For Simulation
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
         # TF listener
-        self.tf_listener = tf.TransformListener()
+        self.trans_listener = tf.TransformListener() # tf transform listener
         self.tf_broadcast = tf.TransformBroadcaster()
-
-    def animal_detected_callback(self, msg):
-        self.object_detected(msg)
-        
-    def explore_callback(self):
-        pass
-
-    def rescue_callback(self):
-        pass
 
     def rescue_on_callback(self):
         pass
@@ -148,6 +139,10 @@ class Supervisor:
         rospy.loginfo("Commanded Pose: x=%f.2, y=%f.2, th=%f.2"
                       % (x_g, y_g,  math.degrees(theta_g)))
 
+    ###### DETECTION STUFF #########
+    def animal_detected_callback(self, msg):
+        self.object_detected(msg)
+        
     def matches_detection(self, loc_list, location):
         distance = np.linalg.norm(np.array(loc_list) - location, axis=-1)
         min_dist = np.min(distance)
@@ -161,11 +156,11 @@ class Supervisor:
         x_robot = rho*np.cos(theta)
         y_robot = rho*np.sin(theta)
         
-        self.tf_broadcast.sendTransform((x_robot/100., y_robot/100., 0),
-                                        tf.transformations.quaternion_from_euler(0, 0, 0),
-                                        rospy.Time.now(),
-                                        "stop_sign",
-                                        "/base_footprint")
+        # self.tf_broadcast.sendTransform((x_robot/100., y_robot/100., 0),
+        #                                 tf.transformations.quaternion_from_euler(0, 0, 0),
+        #                                 rospy.Time.now(),
+        #                                 "stop_sign",
+        #                                 "/base_footprint")
         
         x_world = x_robot*np.cos(self.theta) - y_robot*np.sin(self.theta) + self.x
         y_world = y_robot*np.cos(self.theta) + x_robot*np.sin(self.theta) + self.y
@@ -178,12 +173,9 @@ class Supervisor:
         dist = msg.distance
         conf = msg.confidence
         theta = average_angles(msg.thetaleft, msg.thetaright)
-        # print(np.degrees(msg.thetaleft), np.degrees(msg.thetaright), np.degrees(theta))
         
         # Estimate position in world
         pose_world = self.detection_in_world(dist, theta)
-        # self.print_pose()
-        # print(pose_world)
         
         # Match with previous detections
         if name in self.detections:  # check if in dictionary
@@ -223,16 +215,13 @@ class Supervisor:
         conf = msg.confidence
         dist = msg.distance
         # print(dist, conf)
-        if obj_class == "stop_sign" and dist < STOP_MIN_DIST and dist > 1 \
-           and conf > 0.1 \
-           and not self.mode == Mode.CROSS \
-           and not self.mode == Mode.STOP:
+        
+        if (time.time()-self.cross_time > CROSSING_TIME):
+            self.done_crossing = True
+        
+        if obj_class == "stop_sign" and dist < STOP_MIN_DIST and dist > 1 and self.mode == Mode.NAV and self.done_crossing == True:
+            self.done_crossing = False
             self.mode = Mode.STOP
-            if not self.mode == Mode.STOP:
-                self.prev_mode = self.mode
-            else:
-                self.prev_mode = Mode.EXPLORE
-            self.timer = rospy.get_time()
 
     def close_to_stopsign(self):
         for idx, sign in enumerate(self.detections['stop_sign']):
@@ -241,9 +230,10 @@ class Supervisor:
             if dist < self.sign_stop_distance and \
                dtheta < self.sign_stop_angle and \
                not self.is_crossing:
-                return idx
-        return -1
+                return True
+        return False
 
+    #### NAVIGATION ######
     def rviz_goal_callback(self, msg):
         """ callback for a pose goal sent through rviz """
 
@@ -253,29 +243,9 @@ class Supervisor:
         euler = tf.transformations.euler_from_quaternion(rotation)
         self.theta_g = euler[2]
 
-        self.mode = Mode.NAV
+        #self.mode = Mode.NAV
+        self.mode = Mode.EXPLORE
     
-    def stop_sign_detected_callback_theirs(self, msg):
-        """ callback for when the detector has found a stop sign. Note that
-        a distance of 0 can mean that the lidar did not pickup the stop sign at all """
-
-        # distance of the stop sign
-        dist = msg.distance
-
-        # if close enough and in nav mode, stop
-        if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV:
-            self.init_stop_sign()
-        
-
-    def go_to_pose(self):
-        """ sends the current desired pose to the pose controller """
-        pose_g_msg = Pose2D()
-        pose_g_msg.x = self.x_g
-        pose_g_msg.y = self.y_g
-        pose_g_msg.theta = self.theta_g
-
-        self.pose_goal_publisher.publish(pose_g_msg)
-
     def nav_to_pose(self):
         """ sends the current desired pose to the naviagtor """
         nav_g_msg = Pose2D()
@@ -293,15 +263,6 @@ class Supervisor:
     def close_to(self, x, y, theta):
         """ checks if the robot is at a pose within some threshold """
         return (abs(x-self.x)<POS_EPS and abs(y-self.y)<POS_EPS and abs(theta-self.theta)<THETA_EPS)
-
-    def close_to_goal(self):
-        """ checks if the robot is at a pose within some threshold """
-        return abs(self.cur_goal[0]-self.x)<POS_EPS and  abs(self.cur_goal[1]-self.y)<POS_EPS
-
-    def go_to_goal(self):
-        pose_g_msg = Pose2D()
-        pose_g_msg.x = self.cur_goal[0]
-        pose_g_msg.y = self.cur_goal[1]
 
     def init_stop_sign(self):
         """ initiates a stop sign maneuver """
@@ -325,7 +286,6 @@ class Supervisor:
         """ initiates an intersection crossing maneuver """
         self.cross_start = rospy.get_rostime()
         self.is_crossing = True
-        # self.mode = Mode.CROSS 
 
     def has_crossed(self):
         """ checks if crossing maneuver is over """
@@ -350,11 +310,12 @@ class Supervisor:
         """ the main loop of the robot. At each iteration, depending on its
         mode (i.e. the finite state machine's state), it takes appropriate
         actions. This function shouldn't return anything """
-
-        self.update_pose()
         self.publish_detections()
-        # self.print_pose()
-        # self.print_goal()
+        self.update_pose()
+                          
+        rospy.loginfo("Current Pose: (%f, %f, %f)", self.x, self.y, self.theta)
+        rospy.loginfo("Current Goal: (%f, %f, %f)", self.x_g, self.y_g, self.theta_g)           
+        
 
         # logs the current mode
         if not(self.last_mode_printed == self.mode):
@@ -376,7 +337,8 @@ class Supervisor:
         elif self.mode == Mode.IDLE:
             # send zero velocity
             self.stay_idle()
-
+            self.mode = self.next_mode
+            
         elif self.mode == Mode.NAV:
             if self.close_to(self.x_g,self.y_g,self.theta_g):
                 self.mode = Mode.IDLE
@@ -385,48 +347,43 @@ class Supervisor:
 
         elif self.mode == Mode.EXPLORE:
             # moving towards a desired pose
-            self.mode == Mode.MANUAL  # For now
+            self.x_g, self.y_g, self.theta_g = self.explore_location[self.explore_index]
+            rospy.loginfo("Exploring location: %d", self.explore_index)
+            self.explore_index += 1
+            self.next_mode = self.mode
+            if self.explore_index == len(self.explore_location):
+                self.next_mode = Mode.GO_TO_STATION
+            self.mode = Mode.NAV
+            
 
         elif self.mode == Mode.GO_TO_STATION:
-            self.cur_goal = self.station_location
-            if self.close_to_goal():
-                self.mode = Mode.WAIT_FOR_RESCUERS
-            else:
-                self.nav_to_pose()
+            self.x_g, self.y_g, self.theta_g = self.station_location
+            self.next_mode = Mode.WAIT_FOR_RESCUERS
+            self.mode = Mode.NAV
 
         elif self.mode == Mode.WAIT_FOR_RESCUERS:
-            self.rescue_pub.publish("Waiting for rescuers")
-            if self.rescuers_on:
-                self.mode = Mode.GO_TO_ANIMAL
-            else:
-                pass
+            #self.rescue_pub.publish("Waiting for rescuers")
+            rospy.loginfo("Waiting for rescuers")
+            time.sleep(10)
+            rospy.loginfo("Done Waiting for rescuers")
+            self.mode = Mode.GO_TO_ANIMAL
 
         elif self.mode == Mode.GO_TO_ANIMAL:
-            self.cur_goal = (0, 0)  # TODO: Set this to the goal from rescuer node
-            if self.close_to_goal():
-                self.mode = Mode.ANIMAL_DROPOFF
-                self.timer = rospy.get_time()
-            elif self.all_animals_done:
-                self.mode = Mode.TASK_COMPLETE
-            else:
-                self.go_to_goal()
-
-        elif self.mode == Mode.ANIMAL_DROPOFF:
-            t_elapse = rospy.get_time() - self.timer
-            if t_elapse > ANIMAL_DROPOFF_WAIT:
-                self.mode = Mode.GO_TO_ANIMAL
-
+            self.x_g, self.y_g, self.theta_g = self.animal_location[self.animal_index]
+            rospy.loginfo("Rescuing animal: %d", self.animal_index)
+            self.animal_index += 1
+            self.next_mode = self.mode
+            
+            if self.animal_index == len(self.animal_location):
+                self.next_mode = Mode.TASK_COMPLETE
+                
+            self.mode = Mode.NAV
+                
         elif self.mode == Mode.STOP:
-            # at a stop sign
+            self.stay_idle()
             if self.has_stopped():
                 self.init_crossing()
-
-        elif self.mode == Mode.CROSS:
-            # crossing an intersection
-            self.go_to_goal()
-            t_elapse = rospy.get_time() - self.timer
-            if t_elapse > CROSSING_TIME:
-                self.mode = self.prev_mode
+                self.mode = Mode.NAV
         else:
             raise Exception('This mode is not supported: %s'
                 % str(self.mode))
