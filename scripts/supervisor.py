@@ -364,6 +364,8 @@ class Supervisor:
         if self.close_to_stopsign():
             self.init_stop_sign()
 
+        self.has_crossed()
+
         # checks wich mode it is in and acts accordingly
         if self.mode == Mode.TASK_COMPLETE:
             # not doing anything
