@@ -99,6 +99,7 @@ class Supervisor:
         # Set up subscribers
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
+        rospy.Subscriber('/detector/dog', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/explore_info', ExploreInfo, self.explore_callback)
         rospy.Subscriber('/rescue_info', RescueInfo, self.rescue_callback)
         rospy.Subscriber('/rescue_on', String, self.rescue_on_callback)
@@ -121,11 +122,8 @@ class Supervisor:
         self.tf_broadcast = tf.TransformBroadcaster()
 
     def animal_detected_callback(self, msg):
-        dist = msg.distance
-        conf = msg.confidence
-        theta = (msg.thetaleft + msg.thetaright) / 2
-        theta = theta % 360
-
+        self.object_detected(msg)
+        
     def explore_callback(self):
         a = None
 
