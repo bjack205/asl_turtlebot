@@ -67,8 +67,8 @@ class Detector:
         self.object_publishers = {}
         self.object_labels = load_object_labels(PATH_TO_LABELS)
 
-        #Dictionary of objects to physical heights
-        self.object_heights = {"cat": 25, "dog": 23, "stop_sign": 16}
+        #Dictionary of objects to physical heights in inches
+        self.object_heights = {"cat": 9.84, "dog": 9.06, "stop_sign": 6.30}
 
         self.tf_listener = TransformListener()
         rospy.Subscriber('/camera/image_raw', Image, self.camera_callback, queue_size=1, buff_size=2**24)
