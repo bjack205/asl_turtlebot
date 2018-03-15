@@ -23,7 +23,6 @@ STOP_MIN_DIST = 20  # cm
 
 # time taken to cross an intersection
 CROSSING_TIME = 3
-
 ANIMAL_DROPOFF_WAIT = 1
 
 def angdiff(ang1, ang2):
@@ -76,7 +75,7 @@ class Supervisor:
         # current mode
         #self.mode = Mode.EXPLORE
         # for simulator
-        self.mode = Mode.IDLE
+        self.mode = Mode.EXPLORE
         self.last_mode_printed = None
 
         # mission stuff
@@ -85,6 +84,7 @@ class Supervisor:
         self.all_animals_done = False
         self.rescuers_on = False
         self.is_crossing = False  # Flag if it passing a stop sign
+        self.temp1 = True
 
         # new vars
         self.timer = rospy.Time()
@@ -132,8 +132,12 @@ class Supervisor:
     def animal_detected_callback(self, msg):
         self.object_detected(msg)
         
-    def explore_callback(self):
-        pass
+    def explore_callback(self,msg):
+        if msg.info == "yes":
+            #self.x_g = msg.goal[0]
+            #self.y_g = msg.goal[1]
+            self.mode = Mode.NAV
+            #rospy.loginfo('STOP EXPLORING')
 
     def rescue_callback(self):
         pass
@@ -359,6 +363,8 @@ class Supervisor:
         self.update_pose()
         self.publish_detections()
         rospy.loginfo(self.detections)
+        rospy.loginfo('x: %.3f' % self.x)
+        rospy.loginfo('y: %.3f' % self.y)
         # self.print_pose()
         # self.print_goal()
 
@@ -382,8 +388,15 @@ class Supervisor:
         elif self.mode == Mode.IDLE:
             # send zero velocity
             self.stay_idle()
-
+            rospy.loginfo("YOU MADE IT!")
+        
         elif self.mode == Mode.NAV:
+            if self.temp1:
+                self.x_g = self.detections['dog'][0][0] 
+                self.y_g = self.detections['dog'][0][1]
+                self.temp1 = False
+                rospy.loginfo('Goal set')
+                rospy.loginfo(self.detections['dog'][0])
             if self.close_to(self.x_g,self.y_g,self.theta_g):
                 self.mode = Mode.IDLE
             else:
@@ -391,10 +404,11 @@ class Supervisor:
 
         elif self.mode == Mode.EXPLORE:
             # moving towards a desired pose
-            self.mode == Mode.MANUAL  # For now
+            #self.mode == Mode.MANUAL  # For now
+            pass
 
         elif self.mode == Mode.GO_TO_STATION:
-            self.cur_goal = self.station_location
+            self.cur_goal = self.staticon_location
             if self.close_to_goal():
                 self.mode = Mode.WAIT_FOR_RESCUERS
             else:
