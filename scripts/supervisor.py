@@ -5,7 +5,7 @@ from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float32MultiArray, String
 
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
-from asl_turtlebot.msg import DetectedObject
+from asl_turtlebot.msg import DetectedObject, ExploreInfo
 import tf
 import math
 from enum import Enum
@@ -81,10 +81,10 @@ class Supervisor:
         self.last_mode_printed = None
 
         # mission stuff (0.851, 0.308, 3.133), (0.318, 1.483, 1.681), (1.150, 2.791, -0.001), 
-        self.station_location = (3.372, 1.698, -1.538)
-        self.explore_location = [(3.373, 1.508, -1.619), (3.414, 2.645, -1.585), (3.380, 1.013, -1.536), (2.328, 0.288, -3.093)]
+        self.station_location = (-1.797, -1.602, 0.822)
+        self.explore_location = [(0.508, -0.635, -0.843), (0.508, -0.935, -0.843), (1.415, -1.914, -0.791), (1.456, -2.378, -2.293), (0.828, -2.884, -2.357), (0.0307, -3.268, 2.125), (-0.948, -2.00, 0.776), (-0.492, -1.778, 0.605), (0.366, -1.029, 0.628), (0.4025, -0.5385, -2.288), (-0.0791, -0.921715, -2.375), (-0.96, -1.756, -2.39), (-1.417, -2.133, 2.318), (-1.797, -1.602, 0.822), (-1.055, -0.905, 0.475), (-0.259, -0.1377, 0.700), (0.3, -0.4, 0)]
         self.explore_index = 0
-        self.animal_location = [(2.346, 1.519, 1.517), (2.454, 2.747, 3.119), (3.371, 2.731, -0.001), (3.372, 1.698, -1.538)]
+        self.animal_location = [(1.415, -1.914, -0.791), (0.0307, -3.268, 2.125), (0.366, -1.029, 0.628), (-0.96, -1.756, -2.39) ]
         self.animal_index = 0
 
         self.rescuers_on = False
@@ -112,10 +112,11 @@ class Supervisor:
         self.sign_stop_angle = np.radians(90)  # Angle difference to stop sign to stop (rad)
         
         # Set up subscribers
-        rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
+        #rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/detector/dog', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/rescue_on', String, self.rescue_on_callback)
+        #rospy.Subscriber('/explore_info', ExploreInfo, self.explore_callback)
         
         # For Simulation
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
@@ -125,9 +126,30 @@ class Supervisor:
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
         # TF listener
-        self.trans_listener = tf.TransformListener() # tf transform listener
+        self.tf_listener = tf.TransformListener() # tf transform listener
         self.tf_broadcast = tf.TransformBroadcaster()
 
+           
+    def explore_callback(self,msg):
+        if msg.info == "yes":
+        
+            animal_location = []
+            try: 
+                for ind in range(len(self.detections["cat"])):
+                    self.animal_location = animal_location.append(tuple(self.detections["cat"][ind]))
+            except:
+                pass
+            try: 
+                for ind in range(len(self.detections["dog"])):
+                    self.animal_location = animal_location.append(tuple(self.detections["dog"][ind]))
+            except:
+                pass
+                
+            self.animal_location = list(animal_location)
+            print tuple(self.animal_location)
+            self.mode = Mode.GO_TO_STATION
+            #rospy.loginfo('STOP EXPLORING')
+    
     def rescue_on_callback(self):
         pass
         
@@ -203,7 +225,7 @@ class Supervisor:
                     rospy.Time.now(),
                     name + "_" + str(i),
                     "/map")
-
+                    
     def stop_sign_detected_callback(self, msg):
         """ callback for when the detector has found a stop sign. Note that
         a distance of 0 can mean that the lidar did not pickup the stop sign at all
@@ -224,13 +246,16 @@ class Supervisor:
             self.mode = Mode.STOP
 
     def close_to_stopsign(self):
-        for idx, sign in enumerate(self.detections['stop_sign']):
-            dist = self.sqrt((self.x - sign[0])**2 + (self.y - sign[1])**2)
-            dtheta = angdiff(self.theta, sign[2])
-            if dist < self.sign_stop_distance and \
-               dtheta < self.sign_stop_angle and \
-               not self.is_crossing:
-                return True
+        try:
+            for idx, sign in enumerate(self.detections['stop_sign']):
+                dist = self.sqrt((self.x - sign[0])**2 + (self.y - sign[1])**2)
+                dtheta = angdiff(self.theta, sign[2])
+                if dist < self.sign_stop_distance and \
+                   dtheta < self.sign_stop_angle and \
+                   not self.is_crossing:
+                    return True
+        except:
+            pass
         return False
 
     #### NAVIGATION ######
@@ -304,6 +329,7 @@ class Supervisor:
             self.y = trans[1]
             _, _, self.theta = tf.transformations.euler_from_quaternion(rot)
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            print ("failed to get pose")
             pass
 
     def loop(self):
@@ -312,6 +338,10 @@ class Supervisor:
         actions. This function shouldn't return anything """
         self.publish_detections()
         self.update_pose()
+        
+        
+        rospy.loginfo(self.detections)
+        print (self.mode)
                           
         rospy.loginfo("Current Pose: (%f, %f, %f)", self.x, self.y, self.theta)
         rospy.loginfo("Current Goal: (%f, %f, %f)", self.x_g, self.y_g, self.theta_g)           
