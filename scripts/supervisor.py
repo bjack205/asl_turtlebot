@@ -100,8 +100,8 @@ class Supervisor:
         # stop signs
         self.signs_detected = 0
         self.sign_locations = []
-        self.detection_threshold_dist = 15  # cm
-        self.sign_stop_distance = 10  # Distance to esimated stop sign to stop (cm)
+        self.detection_threshold_dist = 15/100.  # m
+        self.sign_stop_distance = 10/100.  # Distance to esimated stop sign to stop (cm)
         self.sign_stop_angle = np.radians(90)  # Angle difference to stop sign to stop (rad)
         self.stop_sign_start = rospy.get_rostime()
         
@@ -134,10 +134,11 @@ class Supervisor:
         
     def explore_callback(self,msg):
         if msg.info == "yes":
-            #self.x_g = msg.goal[0]
-            #self.y_g = msg.goal[1]
+            #self.x_g = 0#msg.goal[0]
+            #self.y_g = 0#msg.goal[1]
+            #self.theta_g = self.theta
             self.mode = Mode.NAV
-            #rospy.loginfo('STOP EXPLORING')
+            rospy.loginfo('MSG Received: STOP EXPLORING')
 
     def rescue_callback(self):
         pass
@@ -165,12 +166,16 @@ class Supervisor:
     def detection_in_world(self, rho, theta):
         x_robot = rho*np.cos(theta)
         y_robot = rho*np.sin(theta)
-        
+        print("Esimated object:", x_robot, y_robot)
+        x_robot /= 100
+        y_robot /= 100
+        '''
         self.tf_broadcast.sendTransform((x_robot/100., y_robot/100., 0),
                                         tf.transformations.quaternion_from_euler(0, 0, 0),
                                         rospy.Time.now(),
                                         "stop_sign",
                                         "/base_footprint")
+        '''
         
         x_world = x_robot*np.cos(self.theta) - y_robot*np.sin(self.theta) + self.x
         y_world = y_robot*np.cos(self.theta) + x_robot*np.sin(self.theta) + self.y
@@ -212,7 +217,7 @@ class Supervisor:
         for name, detections in self.detections.iteritems():
             for i, detection in enumerate(detections):
                 self.tf_broadcast.sendTransform(
-                    (detection[0]/100, detection[1]/100, 0),
+                    (detection[0], detection[1], 0),
                     tf.transformations.quaternion_from_euler(0, 0, detection[2]),
                     rospy.Time.now(),
                     name + "_" + str(i),
@@ -363,9 +368,7 @@ class Supervisor:
         self.update_pose()
         self.publish_detections()
         rospy.loginfo(self.detections)
-        rospy.loginfo('x: %.3f' % self.x)
-        rospy.loginfo('y: %.3f' % self.y)
-        # self.print_pose()
+        self.print_pose()
         # self.print_goal()
 
         # logs the current mode
@@ -388,15 +391,21 @@ class Supervisor:
         elif self.mode == Mode.IDLE:
             # send zero velocity
             self.stay_idle()
-            rospy.loginfo("YOU MADE IT!")
+            rospy.loginfo("YOU MADE IT!; Dog location:")
+            rospy.loginfo(self.detections['dog'][0])
         
         elif self.mode == Mode.NAV:
+            
             if self.temp1:
-                self.x_g = self.detections['dog'][0][0] 
-                self.y_g = self.detections['dog'][0][1]
+                #R = np.array([[np.cos(self.theta), -np.sin(self.theta), 0],[np.sin(self.theta), np.cos(self.theta),0],[0,0,1]])
+                #pos_goal_worldframe = R.dot(np.array([1.0, 0.0, 0.0]))
+                self.x_g = 0#self.detections['dog'][0][0] 
+                self.y_g = 0#self.detections['dog'][0][1]
+                self.theta_g = self.theta
                 self.temp1 = False
-                rospy.loginfo('Goal set')
+                rospy.loginfo('Goal set to DOG')
                 rospy.loginfo(self.detections['dog'][0])
+            
             if self.close_to(self.x_g,self.y_g,self.theta_g):
                 self.mode = Mode.IDLE
             else:
@@ -408,7 +417,7 @@ class Supervisor:
             pass
 
         elif self.mode == Mode.GO_TO_STATION:
-            self.cur_goal = self.staticon_location
+            self.cur_goal = self.station_location
             if self.close_to_goal():
                 self.mode = Mode.WAIT_FOR_RESCUERS
             else:
