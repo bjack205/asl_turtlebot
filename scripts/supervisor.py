@@ -103,6 +103,7 @@ class Supervisor:
         self.detection_threshold_dist = 15  # cm
         self.sign_stop_distance = 10  # Distance to esimated stop sign to stop (cm)
         self.sign_stop_angle = np.radians(90)  # Angle difference to stop sign to stop (rad)
+        self.stop_sign_start = rospy.get_rostime()
         
         # Set up subscribers
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
@@ -173,6 +174,7 @@ class Supervisor:
         return x_world, y_world, theta_world
 
     def object_detected(self, msg):
+        rospy.loginfo("in object_detected")
         # Get info from message
         name = msg.name
         dist = msg.distance
@@ -235,6 +237,7 @@ class Supervisor:
             self.timer = rospy.get_time()
 
     def close_to_stopsign(self):
+        '''
         for idx, sign in enumerate(self.detections['stop_sign']):
             dist = self.sqrt((self.x - sign[0])**2 + (self.y - sign[1])**2)
             dtheta = angdiff(self.theta, sign[2])
@@ -243,6 +246,8 @@ class Supervisor:
                not self.is_crossing:
                 return idx
         return -1
+        '''
+        pass
 
     def rviz_goal_callback(self, msg):
         """ callback for a pose goal sent through rviz """
@@ -353,6 +358,7 @@ class Supervisor:
 
         self.update_pose()
         self.publish_detections()
+        rospy.loginfo(self.detections)
         # self.print_pose()
         # self.print_goal()
 

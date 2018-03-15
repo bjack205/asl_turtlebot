@@ -180,10 +180,11 @@ class Detector:
         S = 1889.0232
         INTER = 2.8490819
 
-        FOCAL = S/self.object_heights['stop_sign']
-        SLOPE = FOCAL*self.object_heights[detected_object]
+	if detected_object in self.object_heights:
+        	FOCAL = S/self.object_heights['stop_sign']
+        	SLOPE = FOCAL*self.object_heights[detected_object]
 
-        dist = SLOPE/box_height + INTER
+        	dist = SLOPE/box_height + INTER
         
         return dist
 
@@ -249,14 +250,15 @@ class Detector:
                     self.object_publishers[cl] = rospy.Publisher('/detector/'+self.object_labels[cl],
                         DetectedObject, queue_size=10)
 
-                # estimate the corresponding distance using the lidar
-                dist = self.estimate_distance(thetaleft,thetaright,img_laser_ranges, ymax-ymin,DetectedObject())
-
                 # publishes the detected object and its location
                 object_msg = DetectedObject()
                 object_msg.id = cl
                 object_msg.name = self.object_labels[cl]
-                object_msg.confidence = sc
+		
+		# estimate the corresponding distance using the lidar
+                dist = self.estimate_distance(thetaleft,thetaright,img_laser_ranges, ymax-ymin,object_msg.name)
+                
+		object_msg.confidence = sc
                 object_msg.distance = dist
                 object_msg.thetaleft = thetaleft
                 object_msg.thetaright = thetaright
