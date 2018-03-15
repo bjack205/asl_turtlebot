@@ -67,6 +67,9 @@ class Detector:
         self.object_publishers = {}
         self.object_labels = load_object_labels(PATH_TO_LABELS)
 
+        #Dictionary of objects to physical heights
+        self.object_heights = {"cat": 25, "dog": 23, "stop_sign": 16}
+
         self.tf_listener = TransformListener()
         rospy.Subscriber('/camera/image_raw', Image, self.camera_callback, queue_size=1, buff_size=2**24)
         rospy.Subscriber('/camera/image_raw/compressed', CompressedImage, self.compressed_camera_callback, queue_size=1, buff_size=2**24)
@@ -154,7 +157,7 @@ class Detector:
 
         return (x,y,z)
 
-    def estimate_distance(self, thetaleft, thetaright, ranges, box_height):
+    def estimate_distance(self, thetaleft, thetaright, ranges, box_height, detected_object):
         """ estimates the distance of an object in between two angles
         using lidar measurements """
 
@@ -174,8 +177,12 @@ class Detector:
         if num_m>0:
             dist /= num_m
 
-        SLOPE = 1889.0232
+        S = 1889.0232
         INTER = 2.8490819
+
+        FOCAL = S/self.object_heights['stop_sign']
+        SLOPE = FOCAL*self.object_heights[detected_object]
+
         dist = SLOPE/box_height + INTER
         
         return dist
@@ -238,12 +245,12 @@ class Detector:
                 if thetaright<0:
                     thetaright += 2.*math.pi
 
-                # estimate the corresponding distance using the lidar
-                dist = self.estimate_distance(thetaleft,thetaright,img_laser_ranges, ymax-ymin)
-
                 if not self.object_publishers.has_key(cl):
                     self.object_publishers[cl] = rospy.Publisher('/detector/'+self.object_labels[cl],
                         DetectedObject, queue_size=10)
+
+                # estimate the corresponding distance using the lidar
+                dist = self.estimate_distance(thetaleft,thetaright,img_laser_ranges, ymax-ymin,DetectedObject())
 
                 # publishes the detected object and its location
                 object_msg = DetectedObject()
