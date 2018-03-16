@@ -354,7 +354,7 @@ class Supervisor:
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             pass
 
-n    def loop(self):
+    def loop(self):
         """ the main loop of the robot. At each iteration, depending on its
         mode (i.e. the finite state machine's state), it takes appropriate
         actions. This function shouldn't return anything """
