@@ -12,7 +12,7 @@ from enum import Enum
 import numpy as np
 
 # threshold at which we consider the robot at a location
-POS_EPS = .2  # For animal collection
+POS_EPS = .3  # For animal collection
 THETA_EPS = .3
 
 # time to stop at a stop sign
@@ -103,14 +103,15 @@ class Supervisor:
         self.signs_detected = 0
         self.sign_locations = []
         self.detection_threshold_dist = 20.0/100.0  # m
-        self.sign_stop_distance = 10.0/100.0  # Distance to esimated stop sign to stop (cm)
-        self.sign_stop_angle = np.radians(90)  # Angle difference to stop sign to stop (rad)
+        self.sign_stop_distance = 20.0/100.0  # Distance to esimated stop sign to stop (cm)
+        self.sign_stop_angle = np.radians(120)  # Angle difference to stop sign to stop (rad)
         self.stop_sign_start = rospy.get_rostime()
         
         # Set up subscribers
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/detector/dog', DetectedObject, self.animal_detected_callback)
+        rospy.Subscriber('/detector/elephant', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/explore_info', ExploreInfo, self.explore_callback)
         rospy.Subscriber('/rescue_info', RescueInfo, self.rescue_callback)
         rospy.Subscriber('/ready_to_rescue', Bool, self.rescue_on_callback)
@@ -247,7 +248,7 @@ class Supervisor:
                 dtheta = angdiff(self.theta, sign[2])
                 if dist < self.sign_stop_distance and \
                    dtheta < self.sign_stop_angle and \
-                   not self.is_crossing:
+                   not self.is_crossing and not self.mode == Mode.STOP:
                     return True
         return False
 
@@ -337,7 +338,7 @@ class Supervisor:
 
     def has_crossed(self):
         """ checks if crossing maneuver is over """
-        if self.is_crossing and \
+        if self.is_crossing and not self.mode == Mode.STOP and \
            (rospy.get_rostime() - self.cross_start) > rospy.Duration.from_sec(CROSSING_TIME):
             self.is_crossing = False
             return True
@@ -377,7 +378,7 @@ class Supervisor:
 
         # checks wich mode it is in and acts accordingly
         if self.mode == Mode.TASK_COMPLETE:
-            pass
+            self.cur_animal = 0
 
         # sim modes  
         elif self.mode == Mode.IDLE:
@@ -424,7 +425,7 @@ class Supervisor:
             if 'animal' in self.detections:
                 cur_goal = self.detections['animal'][self.cur_animal]
 		R = np.array([[np.cos(self.theta), -np.sin(self.theta), 0],[np.sin(self.theta), np.cos(self.theta),0],[0,0,1]])
-		pos_goal_baseframe = 0.25*np.array([1.0,0.0,0.0])
+		pos_goal_baseframe = 0.2*np.array([1.0,0.0,0.0])
 		pos_goal_worldframe = R.dot(pos_goal_baseframe)
                 self.x_g = cur_goal[0] - pos_goal_worldframe[0]
                 self.y_g = cur_goal[1] - pos_goal_worldframe[1]
@@ -433,6 +434,7 @@ class Supervisor:
                     self.mode = Mode.ANIMAL_DROPOFF
                     self.dropoff_timer = rospy.get_time()
                     self.cur_animal += 1
+                    rospy.loginfo("Animal Found. Dropping off")
                 else:
                     self.nav_to_pose()
                 if self.cur_animal >= len(self.detections['animal']):
