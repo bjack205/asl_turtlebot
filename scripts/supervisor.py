@@ -423,8 +423,11 @@ class Supervisor:
         elif self.mode == Mode.GO_TO_ANIMAL:
             if 'animal' in self.detections:
                 cur_goal = self.detections['animal'][self.cur_animal]
-                self.x_g = cur_goal[0]
-                self.y_g = cur_goal[1]
+		R = np.array([[np.cos(self.theta), -np.sin(self.theta), 0],[np.sin(self.theta), np.cos(self.theta),0],[0,0,1]])
+		pos_goal_baseframe = 0.25*np.array([1.0,0.0,0.0])
+		pos_goal_worldframe = R.dot(pos_goal_baseframe)
+                self.x_g = cur_goal[0] - pos_goal_worldframe[0]
+                self.y_g = cur_goal[1] - pos_goal_worldframe[1]
                 self.theta_g = cur_goal[2]
                 if self.close_to_goal(cur_goal[0], cur_goal[1]):
                     self.mode = Mode.ANIMAL_DROPOFF
