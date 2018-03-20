@@ -2,7 +2,7 @@
 
 import rospy
 from gazebo_msgs.msg import ModelStates
-from std_msgs.msg import Float32MultiArray, String, Bool
+from std_msgs.msg import Float32MultiArray, String, Bool, Float32
 
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from asl_turtlebot.msg import DetectedObject, Task, RescueInfo, ExploreInfo
@@ -123,6 +123,7 @@ class Supervisor:
         self.task_pub = rospy.Publisher('/task', Task, queue_size=10)
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
         self.rescue_pub = rospy.Publisher('/ready_to_rescue', Bool, queue_size=10)
+        self.stop_pub = rospy.Publisher('/stop_sign_distance', Float32, queue_size=10)
         
         # For Simulation
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
@@ -208,13 +209,13 @@ class Supervisor:
         # self.print_pose()
         # print(pose_world)
         
-        # Matc hwith previous detections
+        # Match with previous detections
         if name in self.detections:  # check if in dictionary
             min_ind = self.matches_detection(self.detections[name], pose_world)
         else:
             self.detections[name] = []  # add to list
             min_ind = -1
-            
+
         if min_ind >= 0:  # detected previously
             previous_location = self.detections[name][min_ind]
             # TODO: Replace this with EKF?
@@ -246,6 +247,7 @@ class Supervisor:
             for idx, sign in enumerate(self.detections['stop_sign']):
                 dist = np.sqrt((self.x - sign[0])**2 + (self.y - sign[1])**2)
                 dtheta = angdiff(self.theta, sign[2])
+                self.stop_pub.publish(dist)
                 if dist < self.sign_stop_distance and \
                    dtheta < self.sign_stop_angle and \
                    not self.is_crossing and not self.mode == Mode.STOP:
