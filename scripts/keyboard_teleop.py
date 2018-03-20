@@ -104,6 +104,7 @@ if __name__=="__main__":
     target_turn = 0
     control_speed = 0
     control_turn = 0
+
     try:
         print(msg)
         print(vels(speed,turn))
@@ -127,6 +128,7 @@ if __name__=="__main__":
                 th = 0
                 control_speed = 0
                 control_turn = 0
+                count = 0
             else:
                 count = count + 1
                 if count > 4:
@@ -155,7 +157,8 @@ if __name__=="__main__":
             twist = Twist()
             twist.linear.x = control_speed; twist.linear.y = 0; twist.linear.z = 0
             twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = control_turn
-            pub.publish(twist)
+            if count == 0:
+                pub.publish(twist)
 
             #print("loop: {0}".format(count))
             #print("target: vx: {0}, wz: {1}".format(target_speed, target_turn))

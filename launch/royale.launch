@@ -1,7 +1,13 @@
 <launch>
   <node name="detector" pkg="asl_turtlebot" type="detector.py" />
-  <node name="supervisor" pkg="asl_turtlebot" type="supervisor.py" output="screen" />
+  <!-- <node name="supervisor" pkg="asl_turtlebot" type="supervisor.py" output="screen" /> -->
   <node name="teleop" pkg="asl_turtlebot" type="keyboard_teleop.py" >
-    <remap from="/cmd_vel" to="/cmd_vel" />        
+    <remap from="/cmd_vel" to="/key_vel" />        
+  </node>
+  <node name="pose_controller" pkg="asl_turtlebot" type="pose_controller.py" >
+    <remap from="/cmd_vel" to="/nav_vel" />
+  </node>
+  <node name="navigator" pkg="asl_turtlebot" type="pose_controller.py" >
+    <remap from="/cmd_vel" to="/nav_vel" />
   </node>
 </launch>
