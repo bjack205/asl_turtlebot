@@ -83,7 +83,7 @@ class Navigator:
         self.nav_path_pub = rospy.Publisher('/cmd_path', Path, queue_size=10)
         self.nav_pose_pub = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
         self.nav_pathsp_pub = rospy.Publisher('/cmd_path_sp', PoseStamped, queue_size=10)
-        self.nav_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.nav_vel_pub = rospy.Publisher('/nav_vel', Twist, queue_size=10)
 
         self.trans_listener = tf.TransformListener()
 

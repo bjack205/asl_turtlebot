@@ -7,7 +7,9 @@
   <node name="pose_controller" pkg="asl_turtlebot" type="pose_controller.py" >
     <remap from="/cmd_vel" to="/nav_vel" />
   </node>
-  <node name="navigator" pkg="asl_turtlebot" type="pose_controller.py" >
-    <remap from="/cmd_vel" to="/nav_vel" />
-  </node>
+  <!-- <node name="navigator" pkg="asl_turtlebot" type="pose_controller.py" > -->
+  <!--   <remap from="/cmd_vel" to="/nav_vel" /> -->
+  <!-- </node> -->
+  <include file="$(find turtlebot3_slam)/launch/turtlebot3_slam.launch" />
+  <include file="$(find twist_mux)/launch/twist_mux.launch" />
 </launch>
