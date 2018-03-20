@@ -10,6 +10,7 @@ import tf
 import math
 from enum import Enum
 import numpy as np
+from explore import *
 
 # threshold at which we consider the robot at a location
 POS_EPS = .2  # For animal collection
@@ -71,6 +72,15 @@ class Supervisor:
         self.x_g = 0
         self.y_g = 0
         self.theta_g = 0
+        
+        # map parameters
+        self.map_width = 0
+        self.map_height = 0
+        self.map_resolution = 0
+        self.map_origin = [0,0]
+        self.map_probs = []
+        self.occupancy = None
+        self.occupancy_updated = False
 
         # current mode
         #self.mode = Mode.EXPLORE
@@ -114,6 +124,8 @@ class Supervisor:
         rospy.Subscriber('/explore_info', ExploreInfo, self.explore_callback)
         rospy.Subscriber('/rescue_info', RescueInfo, self.rescue_callback)
         rospy.Subscriber('/ready_to_rescue', Bool, self.rescue_on_callback)
+        rospy.Subscriber('/map', OccupancyGrid, self.map_callback)
+        rospy.Subscriber('/map_metadata', MapMetaData, self.map_md_callback)
         
         # For Simulation
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
@@ -130,6 +142,24 @@ class Supervisor:
         # TF listener
         self.tf_listener = tf.TransformListener()
         self.tf_broadcast = tf.TransformBroadcaster()
+        
+    def map_md_callback(self, msg):
+        self.map_width = msg.width
+        self.map_height = msg.height
+        self.map_resolution = msg.resolution
+        self.map_origin = (msg.origin.position.x,msg.origin.position.y)
+
+    def map_callback(self,msg):
+        self.map_probs = msg.data
+        if self.map_width>0 and self.map_height>0 and len(self.map_probs)>0:
+            self.occupancy = StochOccupancyGrid2D(self.map_resolution,
+                                                  self.map_width,
+                                                  self.map_height,
+                                                  self.map_origin[0],
+                                                  self.map_origin[1],
+                                                  8,
+                                                  self.map_probs)
+            self.occupancy_updated = True
 
     def animal_detected_callback(self, msg):
         msg.name = 'animal'
@@ -402,9 +432,10 @@ class Supervisor:
                 self.nav_to_pose()
 
         elif self.mode == Mode.EXPLORE:
-            # moving towards a desired pose
-            #self.mode == Mode.MANUAL  # For now
-            pass
+            location = (self.x, self.y)
+            
+            (self.x_g, self.y_g) = find_explore_location(world, rmap, location)
+	        self.theta_g = self.theta
 
         elif self.mode == Mode.GO_TO_STATION:
             self.cur_goal = self.station_location
