@@ -137,7 +137,7 @@ class Supervisor:
         
         # For Simulation
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
-        self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.cmd_vel_publisher = rospy.Publisher('/nav_vel', Twist, queue_size=10)
 
         # TF listener
         self.tf_listener = tf.TransformListener()
@@ -433,9 +433,13 @@ class Supervisor:
 
         elif self.mode == Mode.EXPLORE:
             location = (self.x, self.y)
-            
-            (self.x_g, self.y_g) = find_explore_location(world, rmap, location)
-	        self.theta_g = self.theta
+            rmap = self.map_probs.reshape(self.map_height, self.map_width)
+            if self.close_to(self.x_g,self.y_g,self.theta_g):
+                (self.x_g, self.y_g) = find_explore_location(rmap, location, self.map_width, self.map_height, self.map_resolution)
+                self.theta_g = self.theta
+            else:
+                self.nav_to_pose()
+	            
 
         elif self.mode == Mode.GO_TO_STATION:
             self.cur_goal = self.station_location
