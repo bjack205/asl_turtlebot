@@ -131,6 +131,7 @@ class AStar(object):
         distance = [self.distance(self.x_goal,np.array(x)) for x in self.came_from.keys()]
         distance = np.array(distance)
         closest_ind = np.argmin(distance)
+        print("min_dist", distance[closest_ind])
         closest_state = list(self.came_from.keys())[closest_ind]
         
         path = [closest_state]
@@ -140,8 +141,6 @@ class AStar(object):
             path.append(self.came_from[current])
             current = path[-1]
         return list(reversed(path))
-            
-        
 
     # Solves the planning problem using the A* search algorithm. It places
     # the solution as a list of of tuples (each representing a state) that go
@@ -155,7 +154,7 @@ class AStar(object):
 
             if x_current == self.x_goal:
                 self.path = self.reconstruct_path()
-                return 1 #TRUE
+                return True
                 
             self.open_set.remove(x_current)
             self.closed_set.append(x_current)
@@ -176,10 +175,10 @@ class AStar(object):
         if len(self.came_from.keys()) > 0:
             self.path = self.reconstruct_nearest_path()
             print ("reconstructing path to nearest state to goal")
-            return 0 #TRUE
+            return True
         else:
             print ("Could not find an unobstructed state")
-            return -1 #False
+            return False 
 
 # A 2D state space grid with a set of rectangular obstacles. The grid is fully deterministic
 class DetOccupancyGrid2D(object):
