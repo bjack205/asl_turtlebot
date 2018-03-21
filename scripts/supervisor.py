@@ -12,7 +12,7 @@ from enum import Enum
 import numpy as np
 
 # threshold at which we consider the robot at a location
-POS_EPS = .3  # For animal collection
+POS_EPS = .3  # Close to Goal Tolerance
 THETA_EPS = .3
 
 # time to stop at a stop sign
@@ -87,6 +87,17 @@ class Supervisor:
         self.temp1 = True
         self.cur_animal = 0
         self.dropoff_timer = 0
+        self.explore_points = [[2, 0, 0],  # front intersection
+                               [2, 1, np.radians(90)],  # middle of inter
+                               [2, 2.2, np.radians(90)],  # end of intersection
+                               [2.8, 2.2, 0],  # back corner
+                               [2.8, 0, 0],  # near station
+                               [2, 0, -np.radians(180)],  # front intersection
+                               [2, 1, np.radians(90)],  # middle of inter
+                               [0, 1, -np.radians(180)],  # end of one-way?
+                               [0, 0, -np.radians(180)]]
+
+        self.cur_explore = 0
         
         # new vars
         self.timer = rospy.Time()
@@ -102,7 +113,7 @@ class Supervisor:
         # stop signs
         self.signs_detected = 0
         self.sign_locations = []
-        self.detection_threshold_dist = 20.0/100.0  # m
+        self.detection_threshold_dist = 30.0/100.0  # m
         self.sign_stop_distance = 20.0/100.0  # Distance to esimated stop sign to stop (cm)
         self.sign_stop_angle = np.radians(120)  # Angle difference to stop sign to stop (rad)
         self.stop_sign_start = rospy.get_rostime()
@@ -127,7 +138,7 @@ class Supervisor:
         
         # For Simulation
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
-        self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.cmd_vel_publisher = rospy.Publisher('/nav_vel', Twist, queue_size=10)
 
         # TF listener
         self.tf_listener = tf.TransformListener()
@@ -244,14 +255,19 @@ class Supervisor:
         
     def close_to_stopsign(self):
         if 'stop_sign' in self.detections:
+            min_dist = 100
+            dtheta_min = 0
             for idx, sign in enumerate(self.detections['stop_sign']):
                 dist = np.sqrt((self.x - sign[0])**2 + (self.y - sign[1])**2)
                 dtheta = angdiff(self.theta, sign[2])
-                self.stop_pub.publish(dist)
-                if dist < self.sign_stop_distance and \
-                   dtheta < self.sign_stop_angle and \
-                   not self.is_crossing and not self.mode == Mode.STOP:
-                    return True
+                if dist < min_dist:
+                    min_dist = dist
+                    dtheta_min = dtheta
+            self.stop_pub.publish(min_dist)
+            if min_dist < self.sign_stop_distance and \
+               dtheta < self.sign_stop_angle and \
+               not self.is_crossing and not self.mode == Mode.STOP:
+                return True
         return False
 
     def rviz_goal_callback(self, msg):
@@ -324,8 +340,8 @@ class Supervisor:
         if not self.mode == Mode.STOP:
             self.prev_mode = self.mode
         else:
-            rospy.loginfo("STOP Loop. Resetting to EXPLORE")
-            self.prev_mode = Mode.EXPLORE
+            rospy.loginfo("STOP Loop. Resetting to IDLE")
+            self.prev_mode = Mode.IDLE
         self.mode = Mode.STOP
 
     def has_stopped(self):
@@ -405,9 +421,20 @@ class Supervisor:
                 self.nav_to_pose()
 
         elif self.mode == Mode.EXPLORE:
-            # moving towards a desired pose
-            #self.mode == Mode.MANUAL  # For now
-            pass
+            cur_goal = self.explore_points[self.cur_explore]
+            self.x_g = cur_goal[0]
+            self.y_g = cur_goal[1]
+            self.theta_g = cur_goal[2]
+            if self.close_to_goal(cur_goal[0], cur_goal[1]):
+                self.cur_explore += 1
+                self.stay_idle()
+                rospy.loginfo("Explore checkpoint reached, %d / %d" % (self.cur_explore, len(self.explore_points)))
+            else:
+                self.nav_to_pose()
+            if self.cur_explore >= len(self.explore_points):
+                self.mode = Mode.IDLE
+                rospy.loginfo("Explore checkpoints finished.")
+            
 
         elif self.mode == Mode.GO_TO_STATION:
             self.cur_goal = self.station_location
