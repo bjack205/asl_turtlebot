@@ -1,6 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import rospy
+import time
+import random
+import heapq
+
 
 # Represents a motion planning problem to be solved using A*
 class AStar(object):
@@ -13,16 +18,19 @@ class AStar(object):
         self.x_init = self.snap_to_grid(x_init)    # initial state
         self.x_goal = self.snap_to_grid(x_goal)    # goal state
 
-        self.closed_set = []    # the set containing the states that have been visited
-        self.open_set = []      # the set containing the states that are condidate for future expension
+        self.closed_set = set()    # the set containing the states that have been visited
+        self.open_set = set()     # the set containing the states that are condidate for future expension
 
         self.f_score = {}       # dictionary of the f score (estimated cost from start to goal passing through state)
         self.g_score = {}       # dictionary of the g score (cost-to-go from start to state)
         self.came_from = {}     # dictionary keeping track of each state's parent to reconstruct the path
 
-        self.open_set.append(x_init)
+        self.open_set.add(x_init)
         self.g_score[x_init] = 0
         self.f_score[x_init] = self.distance(x_init,x_goal)
+        
+        self.neigh_end_time = 0
+        self.coll_end_time = 0
 
         self.path = None        # the final path as a list of states
 
@@ -39,8 +47,13 @@ class AStar(object):
                 return False
             if x[dim] >= self.statespace_hi[dim]:
                 return False
+        
+        start = time.time()
         if not self.occupancy.is_free(x):
+            self.coll_end_time = self.coll_end_time + time.time() - start
             return False
+            
+        self.coll_end_time = self.coll_end_time + time.time() - start
         return True
 
     # computes the euclidean distance between two states
@@ -56,6 +69,7 @@ class AStar(object):
     #          x - tuple state
     # OUTPUT: A tuple that represents the closest point to x on the discrete state grid
     def snap_to_grid(self, x):
+        #print x, self.resolution, (round(self.resolution*round(x[0]/self.resolution),1), round(self.resolution*round(x[1]/self.resolution)),1), round(x[1]/self.resolution)
         return (self.resolution*round(x[0]/self.resolution), self.resolution*round(x[1]/self.resolution))
 
     # gets the FREE neighbor states of a given state. Assumes a motion model
@@ -74,19 +88,119 @@ class AStar(object):
     def get_neighbors(self, x):
         # TODO: fill me in!
         neighbors = []
+        start = time.time()
+        # move right
+        neigh_x = x[0] + self.resolution
+        neigh_y = x[1]
+        neigh = (neigh_x , neigh_y)
+        if self.is_free(neigh):
+            neighbors.append(self.snap_to_grid(neigh))
         
-        for i in [-self.resolution,0,self.resolution]:
-            for j in [-self.resolution,0,self.resolution]:
-                if not (i==0 and j==0):
-                    x_test = x[0]+i
-                    y_test = x[1]+j
-                    
-                    if self.is_free((x_test,y_test)):
-                        neighbors.append(self.snap_to_grid((x_test,y_test)))
-                  
-        return neighbors
-                        
+        # move left
+        neigh_x = x[0] - self.resolution
+        neigh_y = x[1]
+        neigh = (neigh_x, neigh_y)
+        if self.is_free(neigh):
+            neighbors.append(self.snap_to_grid(neigh))
+        
+        # move up
+        neigh_x = x[0]
+        neigh_y = x[1] + self.resolution
+        neigh = (neigh_x, neigh_y)
+        if self.is_free(neigh):
+            neighbors.append(self.snap_to_grid(neigh))
+        
+        # move down
+        neigh_x = x[0]
+        neigh_y = x[1] - self.resolution
+        neigh = (neigh_x, neigh_y)
+        if self.is_free(neigh):
+            neighbors.append(self.snap_to_grid(neigh))
+        
+        """
+        # move diagonally
+        neigh_x = x[0] + self.resolution/np.sqrt(2)
+        neigh_y = x[1] + self.resolution/np.sqrt(2)
+        neigh = (neigh_x, neigh_y)
+        if self.is_free(neigh):
+            neighbors.append(self.snap_to_grid(neigh))
+        """
+        self.neigh_end_time = self.neigh_end_time + time.time() - start
+        random.shuffle(neighbors)
+        return neighbors           
+    
+    # Line of SIght
+    def LineofSight(self,s,s_p):
+        
+        x0 = round(s[0]/self.resolution)
+        y0 = round(s[1]/self.resolution)
+        x1 = round(s_p[0]/self.resolution)
+        y1 = round(s_p[1]/self.resolution)
+        dy = y1 - y0
+        dx = x1 - x0
+        f = 0
+        
+        if dy < 0:
+            dy = -dy
+            sy = -1
+        else:
+            sy = 1
             
+        if dx < 0:
+            dx = -dx
+            sx = -1
+        else:
+            sx = 1
+        
+        
+        
+        if dx >= dy:
+            while x0 != x1:
+                f = f + dy
+                s_query = (x0+((sx-1)/2), y0+((sy-1)/2))
+                s_free = self.is_free(s_query)
+                if f >= dx:
+                    if not s_free:
+                        return False
+                    y0 = y0 + sy
+                    f = f - dx
+                
+                if f != 0 and not s_free:
+                    return False
+                    
+                
+                s_query2 = (x0+((sx-1)/2), y0)
+                s_free2 = self.is_free(s_query2)
+                s_query3 = (x0+((sx-1)/2), y0-1)
+                s_free3 = self.is_free(s_query3)
+                if dy == 0 and not s_free2  and not s_free3:
+                    return False
+                x0 = x0 + sx
+                #print x0, x1
+        else:
+            while y0 != y1:
+                f = f + dx
+                s_query = (x0+((sx-1)/2), y0+((sy-1)/2))
+                s_free = self.is_free(s_query)
+                if f >= dy:
+                    if not s_free:
+                        return False
+                    x0 = x0 + sx
+                    f = f - dy
+                
+                if f != 0 and not s_free:
+                    return False                    
+                 
+                s_query2 = (x0, y0+((sy-1)/2))
+                s_free2 = self.is_free(s_query2)
+                s_query3 = (x0-1, y0+((sy-1)/2))
+                s_free3 = self.is_free(s_query3)                   
+                if dx == 0 and not s_query2 and not s_query3:
+                    return False
+                
+                y0 = y0 + sy
+                #print y0, y1
+        return True            
 
     # Gets the state in open_set that has the lowest f_score
     # INPUT: None
@@ -112,7 +226,7 @@ class AStar(object):
     def plot_path(self):
         if not self.path:
             return
-
+            
         fig = plt.figure()
 
         self.occupancy.plot(fig.number)
@@ -126,6 +240,25 @@ class AStar(object):
 
         plt.axis('equal')
         plt.show()
+        
+    def reconstruct_nearest_path(self):
+        distance = [self.distance(self.x_goal,np.array(x)) for x in self.came_from.keys()]
+        distance = np.array(distance)
+        closest_ind = np.argmin(distance)
+        min_dist = distance[closest_ind]
+        print("min_dist", distance[closest_ind])
+        
+        if (min_dist > 0.2):
+            return None
+        closest_state = list(self.came_from.keys())[closest_ind]
+        
+        path = [closest_state]
+        current = path[-1]
+        
+        while current != self.x_init:
+            path.append(self.came_from[current])
+            current = path[-1]
+        return list(reversed(path))
 
     # Solves the planning problem using the A* search algorithm. It places
     # the solution as a list of of tuples (each representing a state) that go
@@ -136,29 +269,40 @@ class AStar(object):
         while len(self.open_set)>0:
             # TODO: fill me in!
             x_current = self.find_best_f_score()
-
-            if x_current == self.x_goal:
+            if (x_current == self.x_goal):
                 self.path = self.reconstruct_path()
+                #print ("neigbors time: %f", self.neigh_end_time)
+                #print ("collision time: %f", self.coll_end_time)
                 return True
                 
             self.open_set.remove(x_current)
-            self.closed_set.append(x_current)
-
+            self.closed_set.add(x_current)
+            
             for x_neigh in self.get_neighbors(x_current):
                 if x_neigh in self.closed_set:
                     continue
+                    
                 tentative_g_score = self.g_score[x_current] + self.distance(x_current,x_neigh)
-                if not x_neigh in self.open_set:
-                    self.open_set.append(x_neigh)
+                self.came_from[x_neigh] = x_current
+                if x_neigh not in self.open_set:
+                    self.open_set.add(x_neigh)
                 elif tentative_g_score > self.g_score[x_neigh]:
                     continue
-                
+                    
                 self.came_from[x_neigh] = x_current
                 self.g_score[x_neigh] = tentative_g_score
-                self.f_score[x_neigh] = tentative_g_score + self.distance(x_current,x_neigh)
-            
-
-        return False
+                self.f_score[x_neigh] = tentative_g_score + self.distance(x_neigh, x_goal)
+        
+        if len(self.came_from.keys()) > 0:
+            #self.path = self.reconstruct_nearest_path()
+            if self.path is None:
+                return False
+            print ("reconstructing path to nearest state to goal")
+            return True
+        else:
+            print ("Could not find an unobstructed state")
+           
+            return False 
 
 # A 2D state space grid with a set of rectangular obstacles. The grid is fully deterministic
 class DetOccupancyGrid2D(object):
@@ -190,16 +334,18 @@ class DetOccupancyGrid2D(object):
 
 ### TESTING
 
-'''
 # A simple example
-width = 10
-height = 10
-x_init = (0,0)
-x_goal = (8,8)
-obstacles = [((6,6),(8,7)),((2,1),(4,2)),((2,4),(4,6)),((6,2),(8,4))]
-occupancy = DetOccupancyGrid2D(width, height, obstacles)
-'''
 
+width = 500
+height = 500
+x_init = (0,0)
+x_goal = (5,5)
+#obstacles = [((6,6),(8,7)),((2,1),(4,2)),((2,4),(4,6)),((6,2),(8,4))]
+"""
+obstacles = [((109,446),(126,456)),((348,355),(354,374)),((413,14),(420,32)),((398,426),(420,442)),((274,309),(292,331)),((176,161),(194,179)),((226,149),(239,170)),((268,264),(291,280)),((265,483),(279,498)),((50,141),(62,161)),((150,335),(169,358)),((261,213),(280,234)),((326,417),(349,430)),((122,76),(127,94)),((141,465),(162,476)),((495,380),(508,392)),((405,332),(428,356)),((310,405),(327,415)),((130,488),(153,498)),((361,111),(369,121)),((150,268),(158,286)),((316,389),(328,400)),((489,357),(498,363)),((212,432),(235,437)),((402,83),(422,92)),((77,390),(97,414)),((203,424),(220,447)),((91,54),(107,76)),((188,378),(195,393)),((81,171),(98,191)),((64,491),(72,501)),((466,320),(479,344)),((268,147),(274,157)),((464,59),(483,77)),((288,494),(308,509)),((238,340),(253,362)),((182,66),(203,85)),((180,99),(190,112)),((72,72),(84,92)),((368,87),(380,99)),((354,173),(378,190)),((315,348),(330,361)),((484,122),(505,139)),((113,474),(121,484)),((155,189),(164,212)),((205,212),(219,225)),((164,324),(178,331))]
+occupancy = DetOccupancyGrid2D(width, height, obstacles)
+"""
+"""
 
 # A large random example
 width = 101
@@ -219,11 +365,14 @@ x_goal = tuple(np.random.randint(0,height-2,2).tolist())
 while not (occupancy.is_free(x_init) and occupancy.is_free(x_goal)):
     x_init = tuple(np.random.randint(0,width-2,2).tolist())
     x_goal = tuple(np.random.randint(0,height-2,2).tolist())
-
+    
+"""
+"""
 astar = AStar((0, 0), (width, height), x_init, x_goal, occupancy)
 
 if not astar.solve():
     print "No path found"
     exit(0)
-
-#astar.plot_path()
+    
+astar.plot_path()
+"""

@@ -111,7 +111,7 @@ class Navigator:
                                                   self.map_height,
                                                   self.map_origin[0],
                                                   self.map_origin[1],
-                                                  8,
+                                                  11,
                                                   self.map_probs)
             self.occupancy_updated = True
 
@@ -226,9 +226,27 @@ class Navigator:
                     #
                 else:
                     rospy.logwarn("Navigator: Path too short, not updating")
+                    rospy.loginfo("Navigator: Close to nav goal using pose controller")
+                    pose_g_msg = Pose2D()
+                    pose_g_msg.x = self.x_g
+                    pose_g_msg.y = self.y_g
+                    pose_g_msg.theta = self.theta_g
+                    self.nav_pose_pub.publish(pose_g_msg)
+                    self.current_plan = []
+                    self.V_prev = 0
+                    return
             else:
-                rospy.logwarn("Navigator: Could not find path")
-                self.current_plan = []
+                count = 0
+                rospy.logwarn("Navigator: Could not find path, backing up")
+                """
+                while (count < 3 ):
+                    rospy.logwarn("Navigator: Could not find path, backing up")
+                    cmd_msg = Twist()
+                    cmd_msg.linear.x = -0.05
+                    cmd_msg.angular.z = 0.05
+                    self.nav_vel_pub.publish(cmd_msg)
+                return
+                """
 
         # if we have a path, execute it (we need at least 3 points for this controller)
         if len(self.current_plan) > 3:
