@@ -55,6 +55,7 @@ class Mode(Enum):
     # SIM
     IDLE = 10
     NAV = 11
+    SPIN = 12
 
 class Supervisor:
     """ the state machine of the turtlebot """
@@ -87,17 +88,18 @@ class Supervisor:
         self.temp1 = True
         self.cur_animal = 0
         self.dropoff_timer = 0
-        self.explore_points = [[2, 0, 0],  # front intersection
-                               [2, 1, np.radians(90)],  # middle of inter
-                               [2, 2.2, np.radians(90)],  # end of intersection
-                               [2.8, 2.2, 0],  # back corner
-                               [2.8, 0, 0],  # near station
-                               [2, 0, -np.radians(180)],  # front intersection
-                               [2, 1, np.radians(90)],  # middle of inter
-                               [0, 1, -np.radians(180)],  # end of one-way?
+        self.explore_points = [[2.5, 0.2, 0],  # front intersection
+                               [2.5, 1.6, np.radians(90)],  # middle of inter
+                               [2.5, 2.5, np.radians(90)],  # end of intersection
+                               [2.8, 2.5, 0],  # back corner
+                               [2.8, 0.2, 0],  # near station
+                               [2.5, 0.2, -np.radians(180)],  # front intersection
+                               [2.5, 1.6, np.radians(90)],  # middle of inter
+                               [0, 1.6, -np.radians(180)],  # end of one-way?
                                [0, 0, -np.radians(180)]]
 
         self.cur_explore = 0
+        self.spin_speed = 0.5
         
         # new vars
         self.timer = rospy.Time()
@@ -316,6 +318,11 @@ class Supervisor:
         vel_g_msg = Twist()
         self.cmd_vel_publisher.publish(vel_g_msg)
 
+    def spin(self):
+        vel_g_msg = Twist()
+        vel_g_msg.angular.z = self.spin_speed
+        self.cmd_vel_publisher.publish(vel_g_msg)
+
     def close_to(self, x, y, theta):
         """ checks if the robot is at a pose within some threshold """
         return (abs(x-self.x)<POS_EPS and abs(y-self.y)<POS_EPS and abs(theta-self.theta)<THETA_EPS)
@@ -348,6 +355,10 @@ class Supervisor:
         """ checks if stop sign maneuver is over """
         return (self.mode == Mode.STOP and (rospy.get_rostime()-self.stop_sign_start)>rospy.Duration.from_sec(STOP_TIME))
 
+    def init_spin(self):
+        self.spin_start = rospy.get_rostime()
+        self.mode = Mode.SPIN
+    
     def init_crossing(self):
         """ initiates an intersection crossing maneuver """
         self.cross_start = rospy.get_rostime()
@@ -397,6 +408,7 @@ class Supervisor:
         # checks wich mode it is in and acts accordingly
         if self.mode == Mode.TASK_COMPLETE:
             self.cur_animal = 0
+            self.stay_idle()
 
         # sim modes  
         elif self.mode == Mode.IDLE:
@@ -427,8 +439,8 @@ class Supervisor:
             self.theta_g = cur_goal[2]
             if self.close_to_goal(cur_goal[0], cur_goal[1]):
                 self.cur_explore += 1
-                self.stay_idle()
                 rospy.loginfo("Explore checkpoint reached, %d / %d" % (self.cur_explore, len(self.explore_points)))
+                self.init_spin()
             else:
                 self.nav_to_pose()
             if self.cur_explore >= len(self.explore_points):
@@ -488,6 +500,14 @@ class Supervisor:
             t_elapse = rospy.get_time() - self.timer
             if t_elapse > CROSSING_TIME:
                 self.mode = self.prev_mode
+                
+        elif self.mode == Mode.SPIN:
+            spin_time = rospy.get_rostime() - self.spin_start
+            if angdiff(self.theta, self.theta_g) < np.radians(20) and spin_time > rospy.Duration(3):
+                self.stay_idle()
+                self.mode = Mode.EXPLORE
+            else:
+                self.spin()
         else:
             raise Exception('This mode is not supported: %s'
                 % str(self.mode))
