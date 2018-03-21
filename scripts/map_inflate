@@ -1,0 +1,67 @@
+#!/usr/bin/env python
+
+import rospy
+from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
+import numpy as np
+from scipy import ndimage
+import scipy
+from grids import StochOccupancyGrid2D
+
+class Navigator:
+
+    def __init__(self):
+        rospy.init_node('map_inflator', anonymous=True)
+
+        # map parameters
+        self.map_width = 0
+        self.map_height = 0
+        self.map_resolution = 0
+        self.map_origin = [0,0]
+        self.map_probs = []
+        self.occupancy = None
+        self.occupancy_updated = False
+
+        # sub/pub
+        rospy.Subscriber('/map', OccupancyGrid, self.map_callback)
+        rospy.Subscriber('/map_metadata', MapMetaData, self.map_md_callback)
+        rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_nav_callback)
+        self.map_inflate_pub = rospy.Publisher('/map_inflate', OccupancyGrid, queue_size=10)
+        
+    def cmd_nav_callback(self, data):
+        self.x_g = data.x
+        self.y_g = data.y
+        self.theta_g = data.theta
+        self.run_navigator()
+
+    def map_md_callback(self, msg):
+        self.map_width = msg.width
+        self.map_height = msg.height
+        self.map_resolution = msg.resolution
+        self.map_origin = (msg.origin.position.x,msg.origin.position.y)
+
+    def map_callback(self,msg):
+        self.map_probs = msg.data
+        if self.map_width>0 and self.map_height>0 and len(self.map_probs)>0:
+            self.occupancy = StochOccupancyGrid2D(self.map_resolution,
+                                                  self.map_width,
+                                                  self.map_height,
+                                                  self.map_origin[0],
+                                                  self.map_origin[1],
+                                                  8,
+                                                  self.map_probs)
+            self.occupancy_updated = True
+
+    if self.occupancy_update:
+        occupancy_matrix = np.array(self.map_probs).reshape(self.map_height, self.map_width)
+        map_matrix = np.copy(occupancy_matrix)
+        map_matrix[np.where(occupancy_matrix <= 50 and occupancy_matrix != -1)] = 0
+        map_matrix[np.where(occupancy_matrix > 50)] = 1
+        map_inflated = scipy.ndimage.morphology.binary_dilation(map_matrix,iterations=3)
+        map_inflated[np.where(map_inflated == 1)] = 100
+        
+        self.map_inflate_pub.publish(inflated_map.reshape(-1,))
+    
+
+if __name__ == '__main__':
+    nav = Navigator()
+    rospy.spin()
