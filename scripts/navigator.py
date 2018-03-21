@@ -29,10 +29,10 @@ THETA_START_THRESH = 0.09
 THETA_START_P = 1
 
 # maximum velocity
-V_MAX = .2
+V_MAX = .2 #.2
 
 # maximim angular velocity
-W_MAX = .4
+W_MAX = .4 #4
 
 # desired crusing velocity
 V_DES = 0.12
@@ -83,7 +83,7 @@ class Navigator:
         self.nav_path_pub = rospy.Publisher('/cmd_path', Path, queue_size=10)
         self.nav_pose_pub = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
         self.nav_pathsp_pub = rospy.Publisher('/cmd_path_sp', PoseStamped, queue_size=10)
-        self.nav_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.nav_vel_pub = rospy.Publisher('/nav_vel', Twist, queue_size=10) #cmd_vel
 
         self.trans_listener = tf.TransformListener()
 
@@ -111,7 +111,7 @@ class Navigator:
                                                   self.map_height,
                                                   self.map_origin[0],
                                                   self.map_origin[1],
-                                                  8,
+                                                  20,
                                                   self.map_probs)
             self.occupancy_updated = True
 
@@ -173,7 +173,13 @@ class Navigator:
             problem = AStar(state_min,state_max,x_init,x_goal,self.occupancy,self.plan_resolution)
 
             rospy.loginfo("Navigator: Computing navigation plan")
-            if problem.solve():
+            reachable_goal = problem.solve()
+           
+            
+            if reachable_goal != -1:
+            
+                #if (reachable_goal == 0):
+                    
                 # time
                 Atime_end = rospy.get_rostime()
 
@@ -225,11 +231,32 @@ class Navigator:
                     # plt.show()
                     #
                 else:
-                    rospy.logwarn("Navigator: Path too short, not updating")
+                    rospy.logwarn("Navigator: Path too short, not updating, sending to pose controller")
+                    pose_g_msg = Pose2D()
+                    pose_g_msg.x = self.x_g
+                    pose_g_msg.y = self.y_g
+                    pose_g_msg.theta = self.theta_g
+                    self.nav_pose_pub.publish(pose_g_msg)
+                    self.current_plan = []
+                    self.V_prev = 0
+                    return
+                    
             else:
-                rospy.logwarn("Navigator: Could not find path")
+                rospy.logwarn("Navigator: Could not find path, backing up")
+                """
+                pose_g_msg = Pose2D()
+                sign = -1
+                if self.x < 0:
+                    sign = 1
+                pose_g_msg.x = self.x + sign * 0.12
+                pose_g_msg.y = self.y
+                pose_g_msg.theta = self.theta
+                self.nav_pose_pub.publish(pose_g_msg)
+                """
                 self.current_plan = []
-
+                self.V_prev = 0
+                return
+                
         # if we have a path, execute it (we need at least 3 points for this controller)
         if len(self.current_plan) > 3:
 
