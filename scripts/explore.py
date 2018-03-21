@@ -5,6 +5,7 @@
 import numpy as np
 from grids import StochOccupancyGrid2D
 from scipy import ndimage
+import scipy
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
@@ -31,8 +32,12 @@ def find_closest_unexplored(rmap, location, width, height, resolution):
     return ind_to_cartesian(closest_ind, width, height, resolution)
     
 def find_explore_location(rmap, location, width, height, resolution):
+    #plt.imshow(rmap)
+    #plt.show()
     unexplored = np.zeros(rmap.shape) # binary: explored (0), unexplored (1) matrix
     unexplored[np.where(rmap==-1)] = 1 # set all unexplored regions to 1
+    #plt.imshow(unexplored)
+    #plt.show()
     lbl = scipy.ndimage.label(unexplored)[0] # automatically labels "clusters" with different values (1,2,3...)
     com_options_ind = scipy.ndimage.measurements.center_of_mass(unexplored, lbl,np.unique(lbl)[1:]) # find center(s) of mass
 
@@ -92,5 +97,8 @@ def location_ind(x, width, height, resolution):
 def ind_to_cartesian(ind, width, height, resolution):
     x_car = resolution*ind[0]
     y_car = resolution*ind[1]
+    print('indices')
+    print(ind)
+    print(x_car,y_car)
     return (x_car, y_car)
 

@@ -6,11 +6,13 @@ from std_msgs.msg import Float32MultiArray, String, Bool
 
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from asl_turtlebot.msg import DetectedObject, Task, RescueInfo, ExploreInfo
+from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
 import tf
 import math
 from enum import Enum
 import numpy as np
 from explore import *
+
 
 # threshold at which we consider the robot at a location
 POS_EPS = .2  # For animal collection
@@ -81,6 +83,9 @@ class Supervisor:
         self.map_probs = []
         self.occupancy = None
         self.occupancy_updated = False
+        
+        self.world_width = 3.0
+        self.world_height = 3.0
 
         # current mode
         #self.mode = Mode.EXPLORE
@@ -432,13 +437,24 @@ class Supervisor:
                 self.nav_to_pose()
 
         elif self.mode == Mode.EXPLORE:
-            location = (self.x, self.y)
-            rmap = self.map_probs.reshape(self.map_height, self.map_width)
-            if self.close_to(self.x_g,self.y_g,self.theta_g):
-                (self.x_g, self.y_g) = find_explore_location(rmap, location, self.map_width, self.map_height, self.map_resolution)
-                self.theta_g = self.theta
-            else:
-                self.nav_to_pose()
+            if self.occupancy_updated:
+                grid_x = int((self.x - self.map_origin[0]) / self.map_resolution)
+                grid_y = int((self.y - self.map_origin[1]) / self.map_resolution)
+                location = (self.x - self.map_origin[0], self.y - self.map_origin[1])
+                rmap = np.array(self.map_probs).reshape(self.map_height, self.map_width)
+                
+                ### reduce region to explore
+                x_limit = int(self.world_height/self.map_resolution)
+                y_limit = int(self.world_width/self.map_resolution)
+                print(x_limit,y_limit)
+                print(grid_x,grid_y)
+                rmap = rmap[int(0.98*grid_x):grid_x+x_limit,int(0.98*grid_y):grid_y+y_limit]
+               
+                if self.close_to(self.x_g,self.y_g,self.theta_g):
+                    (self.x_g, self.y_g) = find_explore_location(rmap, location, self.map_width*self.map_resolution, self.map_height*self.map_resolution, self.map_resolution)
+                    self.theta_g = self.theta
+                else:
+                    self.nav_to_pose()
 	            
 
         elif self.mode == Mode.GO_TO_STATION:
